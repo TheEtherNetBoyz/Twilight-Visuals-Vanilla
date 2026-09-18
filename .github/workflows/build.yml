@@ -1,0 +1,47 @@
+name: Build Twilight Visuals Vanilla
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out mod source
+        uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Set up Ninja
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check ninja
+
+      - name: Enable MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B build-ci -G Ninja
+          -DDUSKLIGHT_VERSION=8caab1a6ba4aad5513bc9fe402a76dce53964e9c
+
+      - name: Build mod package
+        shell: pwsh
+        run: cmake --build build-ci --target twilight_visuals_package --parallel
+
+      - name: Upload mod package
+        uses: actions/upload-artifact@v4
+        with:
+          name: twilight-visuals-vanilla
+          path: build-ci/mods/twilight_visuals.dusk
+          if-no-files-found: error
