@@ -29,10 +29,24 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure
+      - name: Fetch Dusklight and configure mod
         shell: pwsh
         run: >-
           cmake -S . -B build-ci -G Ninja
+          -DDUSKLIGHT_VERSION=8caab1a6ba4aad5513bc9fe402a76dce53964e9c
+
+      - name: Configure Dusklight dependencies
+        shell: pwsh
+        run: >-
+          cmake -S dusklight -B dusklight/build/windows-msvc -G Ninja
+          -DDUSK_ENABLE_CODE_MODS=ON
+          -DDUSK_ENABLE_OPUS=OFF
+
+      - name: Reconfigure mod with generated dependencies
+        shell: pwsh
+        run: >-
+          cmake -S . -B build-ci -G Ninja
+          -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
           -DDUSKLIGHT_VERSION=8caab1a6ba4aad5513bc9fe402a76dce53964e9c
 
       - name: Build mod package
