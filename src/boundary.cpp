@@ -174,7 +174,7 @@ void visual_effect_post(ModContext*, void*, void*, void*) {
 HookAction background_material_light_pre(ModContext*, void* args, void*, void*) {
     begin_visual_environment();
     auto* tev = mods::arg<dKy_tevstr_c*>(args, 2);
-    if (tev == nullptr || !active() || palace_excluded() || is_palace_stage() ||
+    if (tev == nullptr || !active() || palace_excluded() ||
         fopAcM_SearchByName(fpcNm_TITLE_e) != nullptr ||
         runtime_settings().style != Style::DarkHour || tev->Type < 32 || tev->Type > 35)
     {
@@ -194,7 +194,10 @@ HookAction background_material_light_pre(ModContext*, void* args, void*, void*) 
     const f32 user = std::clamp(runtime_settings().brightness, 0.0f, 1.2f);
     // Palace materials start with substantially higher TEV energy than overworld terrain.
     // Normalize that input before applying the same Dark Hour lift used everywhere else.
-    const f32 palaceSourceScale = is_palace_stage() ? 0.12f : 1.0f;
+    // Palace floors use their native emissive material path. Keep this background-only lift low
+    // so distant platforms and architecture gain readable green bounce without re-saturating the
+    // floor that is already handled by the native path.
+    const f32 palaceSourceScale = is_palace_stage() ? 0.22f : 1.0f;
     const auto lift = [user, palaceSourceScale](GXColorS10& color) {
         const f32 luma = std::max(0.0f, color.r * 0.25f + color.g * 0.65f + color.b * 0.10f);
         color.r = static_cast<s16>(std::clamp(luma * palaceSourceScale * 0.42f * user, 0.0f, 1023.0f));

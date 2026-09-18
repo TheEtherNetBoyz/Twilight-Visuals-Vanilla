@@ -496,11 +496,11 @@ void set_light_post(ModContext*, void* args, void*, void*) {
         floor_color(env->actor_amb_col, 22, 66, 30);
         for (int i = 0; i < 4; ++i) {
             scale_color(env->bg_amb_col[i], 1.28f);
-            floor_color(env->bg_amb_col[i], 18, 54, 24);
+            floor_color(env->bg_amb_col[i], 42, 118, 52);
         }
         for (int i = 0; i < 6; ++i) {
             scale_color(env->dungeonlight_col[i], 1.55f);
-            floor_color(env->dungeonlight_col[i], 20, 72, 30);
+            floor_color(env->dungeonlight_col[i], 48, 138, 58);
             env->dungeonlight[i].mColor.r = static_cast<u8>(
                 std::clamp<s16>(env->dungeonlight_col[i].r, 0, 255));
             env->dungeonlight[i].mColor.g = static_cast<u8>(
@@ -573,11 +573,11 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
         // corrected floor while bringing walls, towers, enemies, and props out of silhouette.
         for (int i = 0; i < 4; ++i) {
             scale_color(colors[i], 1.18f);
-            floor_color(colors[i], 16, 48, 22);
+            floor_color(colors[i], 42, 112, 50);
         }
         for (int i = 0; i < 6; ++i) {
             scale_light(tev->mLights[i], 1.45f);
-            floor_light(tev->mLights[i], 18, 68, 28);
+            floor_light(tev->mLights[i], 48, 132, 56);
         }
     }
     if (runtime_settings().style == Style::BlackAndWhite) {
