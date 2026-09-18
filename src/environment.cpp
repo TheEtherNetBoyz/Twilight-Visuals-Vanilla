@@ -240,19 +240,6 @@ u8 scale_channel(u8 value, float factor) {
     return static_cast<u8>(std::clamp(value * factor, 0.0f, 255.0f));
 }
 
-void floor_color(GXColorS10& color, s16 r, s16 g, s16 b) {
-    color.r = std::max(color.r, r);
-    color.g = std::max(color.g, g);
-    color.b = std::max(color.b, b);
-}
-
-void floor_light(J3DLightObj& light, u8 r, u8 g, u8 b) {
-    J3DLightInfo* info = light.getLightInfo();
-    info->mColor.r = std::max(info->mColor.r, r);
-    info->mColor.g = std::max(info->mColor.g, g);
-    info->mColor.b = std::max(info->mColor.b, b);
-}
-
 void scale_color(GXColorS10& color, float factor) {
     color.r = scale_channel(color.r, factor);
     color.g = scale_channel(color.g, factor);
@@ -493,14 +480,11 @@ void set_light_post(ModContext*, void* args, void*, void*) {
         // scene illumination independently so architecture and actors remain readable without
         // feeding the floor back into the Dark Hour material boost.
         scale_color(env->actor_amb_col, 1.65f);
-        floor_color(env->actor_amb_col, 22, 66, 30);
         for (int i = 0; i < 4; ++i) {
             scale_color(env->bg_amb_col[i], 1.28f);
-            floor_color(env->bg_amb_col[i], 42, 118, 52);
         }
         for (int i = 0; i < 6; ++i) {
             scale_color(env->dungeonlight_col[i], 1.55f);
-            floor_color(env->dungeonlight_col[i], 48, 138, 58);
             env->dungeonlight[i].mColor.r = static_cast<u8>(
                 std::clamp<s16>(env->dungeonlight_col[i].r, 0, 255));
             env->dungeonlight[i].mColor.g = static_cast<u8>(
@@ -573,11 +557,9 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
         // corrected floor while bringing walls, towers, enemies, and props out of silhouette.
         for (int i = 0; i < 4; ++i) {
             scale_color(colors[i], 1.18f);
-            floor_color(colors[i], 42, 112, 50);
         }
         for (int i = 0; i < 6; ++i) {
             scale_light(tev->mLights[i], 1.45f);
-            floor_light(tev->mLights[i], 48, 132, 56);
         }
     }
     if (runtime_settings().style == Style::BlackAndWhite) {
