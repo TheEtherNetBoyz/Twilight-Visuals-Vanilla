@@ -1,0 +1,7 @@
+{
+  "id": "dev.twilitrealm.twilight_visuals_vanilla",
+  "name": "Twilight Visuals (Vanilla Dusklight)",
+  "version": "2.0.0-vanilla.87",
+  "author": "TheEtherNetBoyz",
+  "description": "Twilight Visuals port using vanilla Dusklight game hooks; no custom host ABI required."
+}
