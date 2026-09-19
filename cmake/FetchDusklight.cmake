@@ -57,7 +57,9 @@ else ()
         # manually instead.
         _exec_git(fetch --depth 1 "${DUSKLIGHT_REPOSITORY}" "${DUSKLIGHT_VERSION}")
         _exec_git(-c advice.detachedHead=false checkout --force FETCH_HEAD)
-        _exec_git(submodule update --init --depth 1 extern/aurora)
+        # The host configure requires both Aurora and Borealis. Keep the mod checkout
+        # self-contained so CI and clean user builds do not depend on a pre-populated tree.
+        _exec_git(submodule update --init --depth 1 extern/aurora extern/borealis)
         file(WRITE "${_dusklight_stamp}" "${DUSKLIGHT_VERSION}\n")
     endif ()
 
