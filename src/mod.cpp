@@ -15,6 +15,7 @@
 #include "menu_scaling.hpp"
 #include "facial.hpp"
 #include "native_face_tuner.hpp"
+#include "load_acceleration.hpp"
 #include <cstdio>
 
 #include "mods/service.hpp"
@@ -96,6 +97,16 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         return result;
     }
 
+    result = twilight_visuals::load_acceleration::install_hooks();
+    if (result != MOD_OK) {
+        if (error) {
+            error->code = result;
+            std::snprintf(error->message, sizeof(error->message), "Load acceleration hooks unavailable");
+        }
+        mod_shutdown(nullptr);
+        return result;
+    }
+
     result = twilight_visuals::music::initialize();
     if (result != MOD_OK) {
         if (error) {
@@ -154,10 +165,12 @@ MOD_EXPORT ModResult mod_update(ModError*) {
     twilight_visuals::refresh_runtime_settings();
     twilight_visuals::facial::update();
     twilight_visuals::music::update();
+    twilight_visuals::load_acceleration::update();
     return MOD_OK;
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    twilight_visuals::load_acceleration::uninstall_hooks();
     twilight_visuals::native_face_tuner::shutdown();
     twilight_visuals::facial::shutdown();
     twilight_visuals::cursor::shutdown();

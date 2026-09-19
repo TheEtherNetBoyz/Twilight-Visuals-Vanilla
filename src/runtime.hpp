@@ -18,6 +18,7 @@ enum class BloomMode : std::int64_t {
 enum class MenuScaling : std::int64_t {
     Native = 0, GameCube = 1, Wii = 2, Dusklight = 3,
 };
+enum class LoadMode : std::int64_t { Normal = 0, Fast = 1 };
 struct RuntimeSettings {
     bool enabled{}; Style style{Style::Normal}; float brightness{1.0f};
     int chromaticAberration{80}; Skybox skybox{Skybox::TwilightDay};
@@ -33,6 +34,7 @@ struct RuntimeSettings {
     MenuScaling menuScaling{MenuScaling::Native};
     bool faceOverride{};
     int faceExpression{};
+    LoadMode loadMode{LoadMode::Normal};
 };
 const RuntimeSettings& runtime_settings();
 void refresh_runtime_settings();

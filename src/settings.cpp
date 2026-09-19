@@ -32,6 +32,7 @@ constexpr std::array<const char*, 4> kBloomModes{
     "Native Dusklight", "Off", "Classic (MFB)", "Dusklight"};
 constexpr std::array<const char*, 4> kMenuScalingModes{
     "Native Dusklight", "GameCube (MFB)", "Wii (MFB)", "Dusklight (MFB)"};
+constexpr std::array<const char*, 2> kLoadModes{"Normal", "Fast Loads (MFB)"};
 constexpr std::array<const char*, 163> kFaceExpressions{
     "0 (Neutral)", "MABA01", "MABA02", "MABA03", "MABA01 L", "MABA01 R",
     "MABAGOMA", "DAM01", "FINISHA", "ARELORD", "ARELORDTAME", "PUSHW", "PULLW",
@@ -201,6 +202,14 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Press D-pad Down as human Link to toggle Wolf Senses after the ability has been unlocked.",
         g_settings.humanWolfSenses);
 
+    svc_ui->pane_add_section(mod_ctx, left, "Loading");
+    add_select(left, "Load Mode",
+        "Normal keeps vanilla transitions. Fast shortens area-transition waits and processes "
+        "more loading work per frame. Reset, title, and protected story transitions stay "
+        "vanilla. MFB Instant Loads are intentionally excluded because their full implementation "
+        "requires engine-side actor and frame-pump changes that vanilla hooks cannot add safely.",
+        g_settings.loadMode, kLoadModes);
+
     svc_ui->pane_add_section(mod_ctx, left, "Interface");
     add_toggle(left, "Hide Mouse Cursor During Gameplay",
         "Hide the mouse cursor while no Dusklight or in-game menu is visible. The cursor is "
@@ -321,6 +330,8 @@ ModResult register_settings(ModError*) {
     result = register_bool("face-override", false, g_settings.faceOverride);
     if (result != MOD_OK) return result;
     result = register_int("face-expression", 0, g_settings.faceExpression);
+    if (result != MOD_OK) return result;
+    result = register_int("load-mode", 0, g_settings.loadMode);
     if (result != MOD_OK) return result;
     return register_bool("exclude-palace-of-twilight", true,
                          g_settings.excludePalaceOfTwilight);

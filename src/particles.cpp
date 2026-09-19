@@ -167,8 +167,89 @@ bool g_moveVisualScope{};
 bool g_drawVisualScope{};
 bool g_cloudVisualScope{};
 bool g_weatherProcVisualScope{};
+roomRead_data_class* g_forcedMoonRoom{};
+u8 g_forcedMoonRoomFlags{};
 int g_nativeCount{};
 u8 g_nativeType{};
+
+bool palace_dark_hour() {
+    const char* stage = dComIfGp_getStartStageName();
+    return active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
+           stage != nullptr && std::strncmp(stage, "D_MN08", 6) == 0;
+}
+
+void restore_forced_moon_room() {
+    if (g_forcedMoonRoom != nullptr) {
+        g_forcedMoonRoom->field_0x2 = g_forcedMoonRoomFlags;
+        g_forcedMoonRoom = nullptr;
+    }
+}
+
+void initialize_palace_moon_packet() {
+    if (!palace_dark_hour() || g_env_light.mSunInitialized ||
+        g_env_light.mpSunPacket != nullptr || g_env_light.mpSunLenzPacket != nullptr)
+        return;
+
+    auto* packet = JKR_NEW_ARGS(0x20) dKankyo_sun_Packet;
+    auto* lenzPacket = JKR_NEW_ARGS(0x20) dKankyo_sunlenz_Packet;
+    if (packet == nullptr || lenzPacket == nullptr) {
+        JKR_DELETE(packet);
+        JKR_DELETE(lenzPacket);
+        return;
+    }
+
+    packet->mpResMoon = static_cast<u8*>(dComIfG_getStageRes("F_moon.bti"));
+    packet->mpResMoon_A = static_cast<u8*>(dComIfG_getStageRes("F_moon_A.bti"));
+    packet->mpResMoon_A_A00 = static_cast<u8*>(dComIfG_getStageRes("F_moon_A_A00.bti"));
+    packet->mpResMoon_A_A01 = static_cast<u8*>(dComIfG_getStageRes("F_moon_A_A01.bti"));
+    packet->mpResMoon_A_A02 = static_cast<u8*>(dComIfG_getStageRes("F_moon_A_A02.bti"));
+    packet->mpResMoon_A_A03 = static_cast<u8*>(dComIfG_getStageRes("F_moon_A_A03.bti"));
+    if (packet->mpResMoon == nullptr) {
+        auto* fallback = static_cast<u8*>(dComIfG_getObjectRes("Always", 0x56));
+        packet->mpResMoon = fallback;
+        packet->mpResMoon_A = fallback;
+        packet->mpResMoon_A_A00 = fallback;
+        packet->mpResMoon_A_A01 = fallback;
+        packet->mpResMoon_A_A02 = fallback;
+        packet->mpResMoon_A_A03 = fallback;
+    }
+
+    packet->field_0x28 = 0;
+    packet->field_0x29 = 0;
+    packet->mVisibility = 0.0f;
+    packet->mSunAlpha = 0.0f;
+    packet->field_0x64 = 0.0f;
+    packet->mMoonAlpha = 0.0f;
+    packet->field_0x6c = g_env_light.daytime < 255.0f ? 1.0f : 0.0f;
+    for (u32& value : packet->field_0x44) value = 0;
+    packet->field_0x58 = 0;
+
+    lenzPacket->mpResBall = static_cast<u8*>(dComIfG_getObjectRes("Always", 0x4A));
+    lenzPacket->mpResRing_A = static_cast<u8*>(dComIfG_getObjectRes("Always", 0x57));
+    lenzPacket->mpResLenz = static_cast<u8*>(dComIfG_getObjectRes("Always", 0x5C));
+    lenzPacket->field_0x8c = 1000000000.0f;
+    lenzPacket->field_0x90 = 0.0f;
+    lenzPacket->mDistFalloff = 0.0f;
+    lenzPacket->mDrawLenzInSky = false;
+
+    g_env_light.mpSunPacket = packet;
+    g_env_light.mpSunLenzPacket = lenzPacket;
+    dKyr_sun_move();
+    dKyr_lenzflare_move();
+    g_env_light.mSunInitialized = true;
+}
+
+void force_palace_moon_room() {
+    restore_forced_moon_room();
+    if (!palace_dark_hour()) return;
+    auto* room = dComIfGp_getStageRoom();
+    const int stayNo = dComIfGp_roomControl_getStayNo();
+    if (room == nullptr || stayNo < 0 || room->num <= stayNo || room->m_entries[stayNo] == nullptr)
+        return;
+    g_forcedMoonRoom = room->m_entries[stayNo];
+    g_forcedMoonRoomFlags = g_forcedMoonRoom->field_0x2;
+    g_forcedMoonRoom->field_0x2 |= 8;
+}
 
 bool native_visual_context() {
     if (!active() || palace_excluded()) return false;
@@ -192,6 +273,9 @@ void restore_native_particles() {
 }
 
 HookAction move_pre(ModContext*, void*, void*, void*) {
+    boundary::set_native_moon_initialization(palace_dark_hour());
+    force_palace_moon_room();
+    initialize_palace_moon_packet();
     if (active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
         !g_env_light.mSunInitialized) {
         g_savedDarkHourVrbox = g_env_light.hide_vrbox;
@@ -225,6 +309,8 @@ void destroy_packet() {
 }
 
 void move_post(ModContext*, void*, void*, void*) {
+    restore_forced_moon_room();
+    boundary::set_native_moon_initialization(false);
     run_trail::move();
     blood::move();
     u8* texture = static_cast<u8*>(dComIfG_getObjectRes("Always", 0x5E));
@@ -332,9 +418,10 @@ void draw_post(ModContext*, void*, void*, void*) {
     if (active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
         g_env_light.mSunInitialized && g_env_light.mpSunPacket != nullptr) {
         auto* stageInfo = dComIfGp_getStageStagInfo();
+        // If the native stage draw suppresses the packet, queue it once on the
+        // sky list. When the stage flag is nonzero, vanilla already submits
+        // the packet; forcing another entry here corrupts Aurora's draw buffer.
         if (stageInfo != nullptr && dStage_stagInfo_GetArg0(stageInfo) == 0) {
-            // MFB's ForceMoon bypasses the stage sky-draw flag. Reproduce that
-            // queue operation with public vanilla draw-list APIs.
             dComIfGd_setListSky();
             j3dSys.getDrawBuffer(J3DSysDrawBuf_Xlu)->entryImm(g_env_light.mpSunPacket, 0);
             dComIfGd_setList();

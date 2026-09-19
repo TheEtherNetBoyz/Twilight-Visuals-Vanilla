@@ -237,8 +237,10 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
         return HOOK_SKIP_ORIGINAL;
     }
 
-    f32 gain = std::clamp(runtime_settings().bloomBrightness, 0.0f, 1.0f);
-    if (palace_dark_hour()) gain *= 0.55f;
+    // Dark Hour shares the regular Twilight bloom preset. Its green identity
+    // comes from the environment blend color, not a Palace-specific strength
+    // reduction.
+    const f32 gain = std::clamp(runtime_settings().bloomBrightness, 0.0f, 1.0f);
     bloom->mEnable = 1;
     bloom->mBlendColor.a = scaled_u8(bloom->mBlendColor.a, gain);
 

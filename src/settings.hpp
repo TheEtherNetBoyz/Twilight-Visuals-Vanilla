@@ -24,6 +24,7 @@ struct Settings {
     ConfigVarHandle menuScaling{};
     ConfigVarHandle faceOverride{};
     ConfigVarHandle faceExpression{};
+    ConfigVarHandle loadMode{};
 };
 
 Settings& settings();

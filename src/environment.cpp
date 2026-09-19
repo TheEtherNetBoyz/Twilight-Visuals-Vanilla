@@ -253,6 +253,25 @@ void scale_light(J3DLightObj& light, float factor) {
     info->mColor.b = scale_channel(info->mColor.b, factor);
 }
 
+// Bloom only processes the bright part of the finished frame. Keep the bloom
+// preset shared with Twilight, but shift the background TEV input toward the
+// Dark Hour green before the terrain is rendered. This is intentionally
+// background-only: Link and other actors keep their authored material colors.
+void tint_dark_hour_background_color(GXColorS10& color) {
+    if (runtime_settings().style != Style::DarkHour) return;
+    color.r = scale_channel(color.r, 0.42f);
+    color.g = scale_channel(color.g, 1.10f);
+    color.b = scale_channel(color.b, 0.50f);
+}
+
+void tint_dark_hour_background_light(J3DLightObj& light) {
+    if (runtime_settings().style != Style::DarkHour) return;
+    J3DLightInfo* info = light.getLightInfo();
+    info->mColor.r = scale_channel(info->mColor.r, 0.42f);
+    info->mColor.g = scale_channel(info->mColor.g, 1.10f);
+    info->mColor.b = scale_channel(info->mColor.b, 0.50f);
+}
+
 void grayscale(GXColorS10& color) {
     const s32 luma = (static_cast<s32>(color.r) * 77 + static_cast<s32>(color.g) * 150 +
                          static_cast<s32>(color.b) * 29) >>
@@ -373,6 +392,10 @@ void apply_astral_palette(dScnKy_env_light_c& env) {
 }
 
 void apply_dark_hour_palette(dScnKy_env_light_c& env) {
+    // Palace keeps its native dungeon/floor lighting so the corrected ground
+    // response is not disturbed, but its sky must use the same Dark Hour
+    // atmosphere as every other outdoor scene. Apply the shared sky palette
+    // below for both paths and keep only the material-light changes non-Palace.
     if (!environment_active() || runtime_settings().style != Style::DarkHour) return;
     const auto tint = [](GXColorS10& color) {
         const float luma = std::max(0.0f, color.r * 0.25f + color.g * 0.65f + color.b * 0.10f);
@@ -380,8 +403,10 @@ void apply_dark_hour_palette(dScnKy_env_light_c& env) {
         color.g = static_cast<s16>(std::clamp(luma * 1.08f, 0.0f, 1023.0f));
         color.b = static_cast<s16>(std::clamp(luma * 0.40f, 0.0f, 1023.0f));
     };
-    for (int i = 0; i < 4; ++i) tint(env.bg_amb_col[i]);
-    for (int i = 0; i < 6; ++i) tint(env.dungeonlight_col[i]);
+    if (!palace_dark_hour()) {
+        for (int i = 0; i < 4; ++i) tint(env.bg_amb_col[i]);
+        for (int i = 0; i < 6; ++i) tint(env.dungeonlight_col[i]);
+    }
     // MFB supplied these colors before the host's visual-Twilight sky-volume response. Vanilla
     // has no separate visual query, so bake that response into the final cloud and haze colors.
     env.vrbox_sky_col = {15, 66, 29, env.vrbox_sky_col.a};
@@ -421,14 +446,10 @@ void apply_mfb_bloom_profile() {
     const dKydata_BloomInfo_c* profile = dKyd_BloomInf_tbl_getp(1);
     if (profile == nullptr) return;
     auto* bloom = mDoGph_gInf_c::getBloom();
-    // The MFB profile was authored for the old host's single visual pass. On
-    // vanilla hooks the scene has already received the Dark Hour background
-    // lift, so using the profile at full density double-feeds the framebuffer
-    // into bloom. Keep the authored threshold/color, but temper the blur and
-    // blend contribution for the vanilla Dark Hour path.
-    const f32 darkHourScale = runtime_settings().style == Style::DarkHour
-                                  ? (palace_dark_hour() ? 0.30f : 0.60f)
-                                  : 1.0f;
+    // Dark Hour uses the same authored Twilight bloom preset. Only the color is
+    // changed below to keep its green identity; threshold, blur, density, and
+    // blend strength must remain identical to regular Twilight.
+    constexpr f32 darkHourScale = 1.0f;
     bloom->setPoint(profile->info.mThreshold);
     static s16 pulsePhase{};
     const f32 pulse = cM_ssin(pulsePhase);
@@ -474,25 +495,6 @@ void set_light_post(ModContext*, void* args, void*, void*) {
     scale_color(env->vrbox_kumo_shadow_col, factor);
     scale_color(env->vrbox_kasumi_outer_col, factor);
     scale_color(env->vrbox_kasumi_inner_col, factor);
-
-    if (palace_dark_hour()) {
-        // The Palace's emissive floor is handled by its native material path. Lift the remaining
-        // scene illumination independently so architecture and actors remain readable without
-        // feeding the floor back into the Dark Hour material boost.
-        scale_color(env->actor_amb_col, 1.65f);
-        for (int i = 0; i < 4; ++i) {
-            scale_color(env->bg_amb_col[i], 1.28f);
-        }
-        for (int i = 0; i < 6; ++i) {
-            scale_color(env->dungeonlight_col[i], 1.55f);
-            env->dungeonlight[i].mColor.r = static_cast<u8>(
-                std::clamp<s16>(env->dungeonlight_col[i].r, 0, 255));
-            env->dungeonlight[i].mColor.g = static_cast<u8>(
-                std::clamp<s16>(env->dungeonlight_col[i].g, 0, 255));
-            env->dungeonlight[i].mColor.b = static_cast<u8>(
-                std::clamp<s16>(env->dungeonlight_col[i].b, 0, 255));
-        }
-    }
 
     if (runtime_settings().style == Style::BlackAndWhite) {
         for (int i = 0; i < 4; ++i) grayscale(env->bg_amb_col[i]);
@@ -546,22 +548,16 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
     auto* fogFar = mods::arg<float*>(args, 5);
     apply_distance_fog(*fog, *fogNear, *fogFar);
     const float factor = brightness();
-    for (int i = 0; i < 4; ++i) scale_color(colors[i], factor);
+    for (int i = 0; i < 4; ++i) {
+        scale_color(colors[i], factor);
+        tint_dark_hour_background_color(colors[i]);
+    }
     for (int i = 0; i < 6; ++i) {
         scale_light(tev->mLights[i], factor);
+        tint_dark_hour_background_light(tev->mLights[i]);
         tint_astral_light(tev->mLights[i], i == 1 || i == 4);
     }
     scale_color(*fog, factor);
-    if (palace_dark_hour()) {
-        // A modest material ambient lift plus a larger directional-light lift preserves the
-        // corrected floor while bringing walls, towers, enemies, and props out of silhouette.
-        for (int i = 0; i < 4; ++i) {
-            scale_color(colors[i], 1.18f);
-        }
-        for (int i = 0; i < 6; ++i) {
-            scale_light(tev->mLights[i], 1.45f);
-        }
-    }
     if (runtime_settings().style == Style::BlackAndWhite) {
         for (int i = 0; i < 4; ++i) grayscale(colors[i]);
         for (int i = 0; i < 6; ++i) grayscale(tev->mLights[i]);
@@ -584,19 +580,6 @@ void set_light_actor_post(ModContext*, void* args, void*, void*) {
         tint_astral_light(tev->mLights[i], i == 1 || i == 4);
     }
     scale_color(*fog, factor);
-    if (runtime_settings().style == Style::DarkHour) {
-        // The MFB visual-effect query was evaluated while actor TEV colors were generated. Keep
-        // actors readable against the luminous sky without applying the room-background lift.
-        tev->AmbCol.r = static_cast<s16>(std::clamp(tev->AmbCol.r * 1.12f, 0.0f, 1023.0f));
-        tev->AmbCol.g = static_cast<s16>(std::clamp(tev->AmbCol.g * 1.22f, 0.0f, 1023.0f));
-        tev->AmbCol.b = static_cast<s16>(std::clamp(tev->AmbCol.b * 0.92f, 0.0f, 1023.0f));
-        for (int i = 0; i < 6; ++i) {
-            auto* info = tev->mLights[i].getLightInfo();
-            info->mColor.r = static_cast<u8>(std::clamp(info->mColor.r * 1.08f, 0.0f, 255.0f));
-            info->mColor.g = static_cast<u8>(std::clamp(info->mColor.g * 1.18f, 0.0f, 255.0f));
-            info->mColor.b = static_cast<u8>(std::clamp(info->mColor.b * 0.92f, 0.0f, 255.0f));
-        }
-    }
     boundary::end_visual_environment();
 }
 }  // namespace

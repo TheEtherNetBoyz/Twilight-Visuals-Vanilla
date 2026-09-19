@@ -75,6 +75,8 @@ void refresh_runtime_settings() {
     g_runtime.faceOverride = get_bool(config.faceOverride);
     g_runtime.faceExpression = static_cast<int>(
         std::clamp<std::int64_t>(get_int(config.faceExpression, 0), 0, 162));
+    g_runtime.loadMode = static_cast<LoadMode>(
+        std::clamp<std::int64_t>(get_int(config.loadMode, 0), 0, 1));
     // Keep the linkage policy in the mod: the host only exposes its current
     // master multiplier and applies the value sent here to the streamed mix.
     // Do not touch the audio stream parameter before the vanilla stage has

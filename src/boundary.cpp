@@ -27,6 +27,7 @@ static bool restoring = false;
 static unsigned s_visual_environment_depth = 0;
 static bool s_visual_moon_position_saved = false;
 static cXyz s_visual_moon_position{};
+static bool s_native_moon_initialization = false;
 
 struct BackgroundLightState {
     dKy_tevstr_c* tev{};
@@ -57,6 +58,18 @@ static bool dark_hour_moon_lighting_active() {
 static bool is_palace_stage() {
     const char* stage = dComIfGp_getStartStageName();
     return stage != nullptr && std::strncmp(stage, "D_MN08", 6) == 0;
+}
+
+// MFB feeds this decision through dKy_darkworld_visual_effect_check(), so every
+// engine lighting path sees the same Dark Hour state. Vanilla Dusklight does not
+// expose that provider, therefore the dKy_darkworld_check hook below is the
+// compatibility boundary. Keep it limited to an actual gameplay scene so stale
+// stage names cannot affect title screens or cutscenes.
+static bool dark_hour_visual_effects_active() {
+    const char* stage = dComIfGp_getStartStageName();
+    return active() && runtime_settings().style == Style::DarkHour &&
+           stage != nullptr && dComIfGp_getStage() != nullptr &&
+           fopAcM_SearchByName(fpcNm_TITLE_e) == nullptr && !palace_excluded();
 }
 
 static void dKy_reset_visual_environment_patterns() {
@@ -226,10 +239,17 @@ void background_material_light_post(ModContext*, void*, void*, void*) {
 }
 
 HookAction native_darkworld_check_pre(ModContext*, void*, void* retval, void*) {
-    // Palace already has native Twilight materials and a special additional framebuffer capture.
-    // Forcing the visual-effect predicate here zeros normal material ambient colors while the
-    // emissive floor still enters bloom, producing a white floor over a nearly black scene.
-    if (s_visual_environment_depth == 0 || !active() || palace_excluded() || is_palace_stage())
+    // MFB's visual-Twilight provider is global: background materials, actors,
+    // shadow setup, light sizing, and bloom all consume the same result. The
+    // old Vanilla port only forced this while one of its temporary hook scopes
+    // was open and skipped Palace entirely, which left the emissive floor on
+    // the Dark Hour path while distant geometry stayed on the normal path.
+    // MFB's ForceMoon path temporarily bypasses the visual-darkworld result
+    // so vanilla can allocate its native sun/moon packet. Keep the bypass
+    // scoped to the weather tick; all other lighting paths still see the
+    // unified Dark Hour result.
+    if (s_native_moon_initialization) return HOOK_CONTINUE;
+    if (!dark_hour_visual_effects_active())
         return HOOK_CONTINUE;
     *static_cast<u8*>(retval) = TRUE;
     return HOOK_SKIP_ORIGINAL;
@@ -288,6 +308,12 @@ void end_visual_environment() {
         s_visual_moon_position_saved = false;
     }
 }
+void set_native_moon_initialization(bool enabled) {
+    s_native_moon_initialization = enabled;
+}
+bool native_moon_initialization_active() {
+    return s_native_moon_initialization;
+}
 void shutdown() {
     restoring = true;
     if (s_visual_environment_area_initialized && s_visual_environment_forced &&
@@ -295,6 +321,7 @@ void shutdown() {
     s_visual_enemy_form_context = false;
     s_visual_environment_area_initialized = false;
     s_visual_environment_depth = 0;
+    s_native_moon_initialization = false;
     mods::hook::uninstall<TwilightCameraLightSet>();
     mods::hook::uninstall<SunMoonLightCheck>();
     mods::hook::uninstall<SwordFlushSet>();
