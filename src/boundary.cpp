@@ -205,23 +205,24 @@ HookAction background_material_light_pre(ModContext*, void* args, void*, void*) 
     // context was globally active. On vanilla hooks, raise only the background TEV energy before
     // material colors are committed so floors and terrain enter bloom without overexposing Link.
     const f32 user = std::clamp(runtime_settings().brightness, 0.0f, 1.2f);
+    const f32 indoorScale = environment::dark_hour_indoor() ? 0.72f : 1.0f;
     // Palace materials start with substantially higher TEV energy than overworld terrain.
     // Normalize that input before applying the same Dark Hour lift used everywhere else.
     const f32 palaceSourceScale = is_palace_stage() ? 0.12f : 1.0f;
-    const auto lift = [user, palaceSourceScale](GXColorS10& color) {
+    const auto lift = [user, indoorScale, palaceSourceScale](GXColorS10& color) {
         const f32 luma = std::max(0.0f, color.r * 0.25f + color.g * 0.65f + color.b * 0.10f);
-        color.r = static_cast<s16>(std::clamp(luma * palaceSourceScale * 0.42f * user, 0.0f, 1023.0f));
-        color.g = static_cast<s16>(std::clamp(luma * palaceSourceScale * 1.65f * user, 0.0f, 1023.0f));
-        color.b = static_cast<s16>(std::clamp(luma * palaceSourceScale * 0.62f * user, 0.0f, 1023.0f));
+        color.r = static_cast<s16>(std::clamp(luma * palaceSourceScale * 0.42f * user * indoorScale, 0.0f, 1023.0f));
+        color.g = static_cast<s16>(std::clamp(luma * palaceSourceScale * 1.65f * user * indoorScale, 0.0f, 1023.0f));
+        color.b = static_cast<s16>(std::clamp(luma * palaceSourceScale * 0.62f * user * indoorScale, 0.0f, 1023.0f));
     };
     lift(tev->AmbCol);
     for (int i = 0; i < 6; ++i) {
         auto* info = tev->mLights[i].getLightInfo();
         const f32 luma = info->mColor.r * 0.25f + info->mColor.g * 0.65f +
                          info->mColor.b * 0.10f;
-        info->mColor.r = static_cast<u8>(std::clamp(luma * palaceSourceScale * 0.38f * user, 0.0f, 255.0f));
-        info->mColor.g = static_cast<u8>(std::clamp(luma * palaceSourceScale * 1.45f * user, 0.0f, 255.0f));
-        info->mColor.b = static_cast<u8>(std::clamp(luma * palaceSourceScale * 0.55f * user, 0.0f, 255.0f));
+        info->mColor.r = static_cast<u8>(std::clamp(luma * palaceSourceScale * 0.38f * user * indoorScale, 0.0f, 255.0f));
+        info->mColor.g = static_cast<u8>(std::clamp(luma * palaceSourceScale * 1.45f * user * indoorScale, 0.0f, 255.0f));
+        info->mColor.b = static_cast<u8>(std::clamp(luma * palaceSourceScale * 0.55f * user * indoorScale, 0.0f, 255.0f));
     }
     return HOOK_CONTINUE;
 }

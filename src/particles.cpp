@@ -172,10 +172,10 @@ u8 g_forcedMoonRoomFlags{};
 int g_nativeCount{};
 u8 g_nativeType{};
 
-bool palace_dark_hour() {
+bool dark_hour_moon_active() {
     const char* stage = dComIfGp_getStartStageName();
     return active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
-           stage != nullptr && std::strncmp(stage, "D_MN08", 6) == 0;
+           stage != nullptr && *stage != '\0';
 }
 
 void restore_forced_moon_room() {
@@ -185,8 +185,8 @@ void restore_forced_moon_room() {
     }
 }
 
-void initialize_palace_moon_packet() {
-    if (!palace_dark_hour() || g_env_light.mSunInitialized ||
+void initialize_dark_hour_moon_packet() {
+    if (!dark_hour_moon_active() || g_env_light.mSunInitialized ||
         g_env_light.mpSunPacket != nullptr || g_env_light.mpSunLenzPacket != nullptr)
         return;
 
@@ -239,9 +239,9 @@ void initialize_palace_moon_packet() {
     g_env_light.mSunInitialized = true;
 }
 
-void force_palace_moon_room() {
+void force_dark_hour_moon_room() {
     restore_forced_moon_room();
-    if (!palace_dark_hour()) return;
+    if (!dark_hour_moon_active()) return;
     auto* room = dComIfGp_getStageRoom();
     const int stayNo = dComIfGp_roomControl_getStayNo();
     if (room == nullptr || stayNo < 0 || room->num <= stayNo || room->m_entries[stayNo] == nullptr)
@@ -273,9 +273,9 @@ void restore_native_particles() {
 }
 
 HookAction move_pre(ModContext*, void*, void*, void*) {
-    boundary::set_native_moon_initialization(palace_dark_hour());
-    force_palace_moon_room();
-    initialize_palace_moon_packet();
+    boundary::set_native_moon_initialization(dark_hour_moon_active());
+    force_dark_hour_moon_room();
+    initialize_dark_hour_moon_packet();
     if (active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
         !g_env_light.mSunInitialized) {
         g_savedDarkHourVrbox = g_env_light.hide_vrbox;

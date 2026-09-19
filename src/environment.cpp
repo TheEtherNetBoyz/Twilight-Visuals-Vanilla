@@ -10,6 +10,7 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_kankyo.h"
 #include "d/d_kankyo_data.h"
+#include "d/d_stage.h"
 #include "d/d_kankyo_wether.h"
 #include "d/actor/d_a_player.h"
 #include "f_op/f_op_camera_mng.h"
@@ -22,6 +23,16 @@
 #include <cstring>
 
 namespace twilight_visuals::environment {
+
+bool dark_hour_indoor() {
+    if (!runtime_settings().enabled || runtime_settings().style != Style::DarkHour) return false;
+    auto* stage = dComIfGp_getStage();
+    auto* stagInfo = stage != nullptr ? stage->getStagInfo() : nullptr;
+    if (stagInfo == nullptr) return false;
+    const u32 type = dStage_stagInfo_GetSTType(stagInfo);
+    return type == ST_ROOM || type == ST_DUNGEON || type == ST_BOSS_ROOM;
+}
+
 namespace {
 DEFINE_HOOK(&dScnKy_env_light_c::setLight, EnvironmentSetLight);
 DEFINE_HOOK(&dScnKy_env_light_c::setLight_bg, EnvironmentSetLightBg);
@@ -253,23 +264,39 @@ void scale_light(J3DLightObj& light, float factor) {
     info->mColor.b = scale_channel(info->mColor.b, factor);
 }
 
+// Dark Hour should keep the authored differences between areas, but bright
+// outdoor palettes must not turn into clipped neon when the green tint is
+// applied. Only compress the upper end; darker areas keep their current lift.
+float dark_hour_environment_exposure(float luma) {
+    constexpr float referenceLuma = 300.0f;
+    constexpr float minimumExposure = 0.36f;
+    if (luma <= referenceLuma) return 1.0f;
+    const float outdoorExposure = std::clamp(referenceLuma / luma, minimumExposure, 1.0f);
+    return dark_hour_indoor() ? outdoorExposure * 0.72f : outdoorExposure;
+}
+
 // Bloom only processes the bright part of the finished frame. Keep the bloom
 // preset shared with Twilight, but shift the background TEV input toward the
 // Dark Hour green before the terrain is rendered. This is intentionally
 // background-only: Link and other actors keep their authored material colors.
 void tint_dark_hour_background_color(GXColorS10& color) {
     if (runtime_settings().style != Style::DarkHour) return;
-    color.r = scale_channel(color.r, 0.42f);
-    color.g = scale_channel(color.g, 1.10f);
-    color.b = scale_channel(color.b, 0.50f);
+    const float luma = std::max(0.0f, color.r * 0.25f + color.g * 0.65f + color.b * 0.10f);
+    const float exposure = dark_hour_environment_exposure(luma);
+    color.r = scale_channel(color.r, 0.42f * exposure);
+    color.g = scale_channel(color.g, 1.10f * exposure);
+    color.b = scale_channel(color.b, 0.50f * exposure);
 }
 
 void tint_dark_hour_background_light(J3DLightObj& light) {
     if (runtime_settings().style != Style::DarkHour) return;
     J3DLightInfo* info = light.getLightInfo();
-    info->mColor.r = scale_channel(info->mColor.r, 0.42f);
-    info->mColor.g = scale_channel(info->mColor.g, 1.10f);
-    info->mColor.b = scale_channel(info->mColor.b, 0.50f);
+    const float luma = std::max(0.0f, info->mColor.r * 0.25f + info->mColor.g * 0.65f +
+                                           info->mColor.b * 0.10f);
+    const float exposure = dark_hour_environment_exposure(luma);
+    info->mColor.r = scale_channel(info->mColor.r, 0.42f * exposure);
+    info->mColor.g = scale_channel(info->mColor.g, 1.10f * exposure);
+    info->mColor.b = scale_channel(info->mColor.b, 0.50f * exposure);
 }
 
 void grayscale(GXColorS10& color) {
@@ -399,14 +426,16 @@ void apply_dark_hour_palette(dScnKy_env_light_c& env) {
     if (!environment_active() || runtime_settings().style != Style::DarkHour) return;
     const auto tint = [](GXColorS10& color) {
         const float luma = std::max(0.0f, color.r * 0.25f + color.g * 0.65f + color.b * 0.10f);
-        color.r = static_cast<s16>(std::clamp(luma * 0.28f, 0.0f, 1023.0f));
-        color.g = static_cast<s16>(std::clamp(luma * 1.08f, 0.0f, 1023.0f));
-        color.b = static_cast<s16>(std::clamp(luma * 0.40f, 0.0f, 1023.0f));
+        const float exposure = dark_hour_environment_exposure(luma);
+        color.r = static_cast<s16>(std::clamp(luma * 0.28f * exposure, 0.0f, 1023.0f));
+        color.g = static_cast<s16>(std::clamp(luma * 1.08f * exposure, 0.0f, 1023.0f));
+        color.b = static_cast<s16>(std::clamp(luma * 0.40f * exposure, 0.0f, 1023.0f));
     };
-    if (!palace_dark_hour()) {
-        for (int i = 0; i < 4; ++i) tint(env.bg_amb_col[i]);
-        for (int i = 0; i < 6; ++i) tint(env.dungeonlight_col[i]);
-    }
+    // Palace uses the same Dark Hour high-end clamp as the overworld. Leaving
+    // its authored ambient/dungeon values untouched is what caused bright
+    // Palace rooms to blow out while other areas stayed regulated.
+    for (int i = 0; i < 4; ++i) tint(env.bg_amb_col[i]);
+    for (int i = 0; i < 6; ++i) tint(env.dungeonlight_col[i]);
     // MFB supplied these colors before the host's visual-Twilight sky-volume response. Vanilla
     // has no separate visual query, so bake that response into the final cloud and haze colors.
     env.vrbox_sky_col = {15, 66, 29, env.vrbox_sky_col.a};
@@ -449,7 +478,7 @@ void apply_mfb_bloom_profile() {
     // Dark Hour uses the same authored Twilight bloom preset. Only the color is
     // changed below to keep its green identity; threshold, blur, density, and
     // blend strength must remain identical to regular Twilight.
-    constexpr f32 darkHourScale = 1.0f;
+    const f32 darkHourScale = dark_hour_indoor() ? 0.82f : 1.0f;
     bloom->setPoint(profile->info.mThreshold);
     static s16 pulsePhase{};
     const f32 pulse = cM_ssin(pulsePhase);
