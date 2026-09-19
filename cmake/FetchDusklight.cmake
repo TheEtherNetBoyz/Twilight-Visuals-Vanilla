@@ -45,7 +45,15 @@ else ()
         string(STRIP "${_dusklight_fetched}" _dusklight_fetched)
     endif ()
 
-    if (NOT _dusklight_fetched STREQUAL DUSKLIGHT_VERSION)
+    set(_dusklight_submodules_ready TRUE)
+    foreach (_dusklight_submodule
+            extern/aurora extern/borealis mods/cosmetics mods/randomizer)
+        if (NOT EXISTS "${DUSKLIGHT_DIR}/${_dusklight_submodule}/CMakeLists.txt")
+            set(_dusklight_submodules_ready FALSE)
+        endif ()
+    endforeach ()
+
+    if (NOT _dusklight_fetched STREQUAL DUSKLIGHT_VERSION OR NOT _dusklight_submodules_ready)
         find_package(Git QUIET REQUIRED)
         message(STATUS "Dusklight: fetching ${DUSKLIGHT_VERSION} into ${DUSKLIGHT_DIR}")
         file(MAKE_DIRECTORY "${DUSKLIGHT_DIR}")
@@ -53,13 +61,14 @@ else ()
             _exec_git(init --quiet)
             _exec_git(remote add origin "${DUSKLIGHT_REPOSITORY}")
         endif ()
-        # FetchContent's GIT_SHALLOW falls back to a full clone for SHAs, so we fetch
-        # manually instead.
+        # FetchContent's GIT_SHALLOW falls back to a full clone for SHAs, so fetch
+        # manually instead. This also repairs an incomplete checkout with a stale stamp.
         _exec_git(fetch --depth 1 "${DUSKLIGHT_REPOSITORY}" "${DUSKLIGHT_VERSION}")
         _exec_git(-c advice.detachedHead=false checkout --force FETCH_HEAD)
-        # The host configure requires both Aurora and Borealis. Keep the mod checkout
-        # self-contained so CI and clean user builds do not depend on a pre-populated tree.
-        _exec_git(submodule update --init --depth 1 extern/aurora extern/borealis)
+        # Keep the Dusklight checkout self-contained. Its code-mod build adds the
+        # cosmetics and randomizer directories as well as the Aurora/Borealis SDKs.
+        _exec_git(submodule update --init --depth 1
+                extern/aurora extern/borealis mods/cosmetics mods/randomizer)
         file(WRITE "${_dusklight_stamp}" "${DUSKLIGHT_VERSION}\n")
     endif ()
 
