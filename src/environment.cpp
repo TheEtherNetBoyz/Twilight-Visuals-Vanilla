@@ -35,6 +35,15 @@ bool faron_woods() {
     return stage != nullptr && std::strncmp(stage, "F_SP108", 7) == 0;
 }
 
+bool castle_town() {
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr && std::strncmp(stage, "F_SP116", 7) == 0;
+}
+
+bool reduced_dark_hour_outdoor() {
+    return forest_temple_outside_bridge() || faron_woods() || castle_town();
+}
+
 bool dark_hour_indoor() {
     if (!runtime_settings().enabled || runtime_settings().style != Style::DarkHour) return false;
     const char* stageName = dComIfGp_getStartStageName();
@@ -320,7 +329,7 @@ float dark_hour_environment_exposure(float luma) {
         : std::clamp(referenceLuma / luma, minimumExposure, 1.0f);
     // The Forest Temple bridge uses the outdoor sky, but its pale materials
     // start much brighter than ordinary field terrain.
-    if (forest_temple_outside_bridge() || faron_woods()) return outdoorExposure * 0.56f;
+    if (reduced_dark_hour_outdoor()) return outdoorExposure * 0.56f;
     if (dark_hour_dungeon_indoor()) return outdoorExposure * 0.42f;
     return dark_hour_indoor() ? outdoorExposure * 0.68f : outdoorExposure;
 }
@@ -590,7 +599,7 @@ void apply_mfb_bloom_profile() {
     // bloom in the exterior Dark Hour green. This creates localized glow
     // without recoloring the room's ambient light.
     const bool dungeonIndoor = dark_hour_dungeon_indoor();
-    const bool reducedOutdoor = forest_temple_outside_bridge() || faron_woods();
+    const bool reducedOutdoor = reduced_dark_hour_outdoor();
     const f32 darkHourScale = reducedOutdoor ? 0.56f
         : (dungeonIndoor ? 0.34f : (indoor ? 0.58f : 1.0f));
     const int threshold = reducedOutdoor

@@ -501,8 +501,11 @@ void update_from_manager(Z2SeqMgr* p) {
         (sub == 0xffffffffu || ordinary);
     const int mode = runtime_settings().style == Style::AstralPlane ? 1 :
                      runtime_settings().style == Style::DarkHour ? 2 : 0;
-    const float base = p->mAllBgmMaster.get() * p->mBgmPause.get() *
-        p->mFanfareMute.get() * p->mWindStone.get() * p->mTwilightGateVol;
+    // Pause and fanfare mute are live interruption controls. Keep them outside
+    // the room-transition latch so item-get jingles and other fanfares can duck
+    // the streamed replacement exactly as they duck vanilla BGM.
+    const float interruptionGain = p->mBgmPause.get() * p->mFanfareMute.get();
+    const float base = p->mAllBgmMaster.get() * p->mWindStone.get() * p->mTwilightGateVol;
     const float nativeSceneGain = base * (ordinary && scope ? 1.0f : p->mMainBgmMaster.get()) *
         p->mSceneBgm.get() * p->mStreamBgmMaster.get() * p->field_0x84.get() *
         p->field_0xa4.get();
@@ -512,10 +515,11 @@ void update_from_manager(Z2SeqMgr* p) {
     // teardown, so preserve its last live gain and decoder position here.
     if (enabled && safe && nativeSceneGain > 0.001f)
         ambientGainLatch = std::clamp(nativeSceneGain, 0.0f, 1.0f);
-    const float gain = enabled && safe ? ambientGainLatch : 0.0f;
+    const float gain = enabled && safe ? ambientGainLatch * interruptionGain : 0.0f;
     const bool boss = enabled && (is_boss_bgm(main) || is_boss_bgm(sub));
     update_sequence(enabled, enabled && safe, enabled ? mode : 0, gain, scope,
-        ordinary, base * p->mStreamBgmMaster.get(), boss, base, main, sub);
+        ordinary, base * interruptionGain * p->mStreamBgmMaster.get(), boss,
+        base * interruptionGain, main, sub);
     apply_native_gains(p);
 
     // Temporary high-signal diagnostics: one line every five seconds identifies
