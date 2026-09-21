@@ -65,6 +65,7 @@ void refresh_runtime_settings() {
             get_int(config.bloomBrightness, 100), 0, 100)) / 100.0f;
     g_runtime.legacyBloom = get_bool(config.legacyBloom);
     g_runtime.skywardSwordRunning = get_bool(config.skywardSwordRunning);
+    g_runtime.sheathSwordWhileSprinting = get_bool(config.sheathSwordWhileSprinting);
     g_runtime.skywardSwordWallRunning = get_bool(config.skywardSwordWallRunning);
     g_runtime.overrideTempleMusic = get_bool(config.overrideTempleMusic);
     g_runtime.humanWolfSenses = get_bool(config.humanWolfSenses);

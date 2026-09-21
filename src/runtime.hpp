@@ -27,6 +27,7 @@ struct RuntimeSettings {
     bool legacyBloom{};
     bool overrideTempleMusic{};
     bool skywardSwordRunning{};
+    bool sheathSwordWhileSprinting{};
     bool skywardSwordWallRunning{};
     bool humanWolfSenses{};
     bool excludePalaceOfTwilight{true};

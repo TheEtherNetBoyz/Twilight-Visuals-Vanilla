@@ -24,8 +24,45 @@
 
 namespace twilight_visuals::environment {
 
+bool forest_temple_outside_bridge() {
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr && std::strncmp(stage, "D_MN05", 6) == 0 &&
+           dComIfGp_roomControl_getStayNo() == 4;
+}
+
+bool faron_woods() {
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr && std::strncmp(stage, "F_SP108", 7) == 0;
+}
+
 bool dark_hour_indoor() {
     if (!runtime_settings().enabled || runtime_settings().style != Style::DarkHour) return false;
+    const char* stageName = dComIfGp_getStartStageName();
+    // Palace rooms 0 and 11 are its exterior-like spaces. Its remaining rooms
+    // are interiors and should use the same indoor profile as other dungeons.
+    if (stageName != nullptr && std::strncmp(stageName, "D_MN08", 6) == 0) {
+        const int room = dComIfGp_roomControl_getStayNo();
+        return room != 0 && room != 11;
+    }
+    // Forest Temple room 4 is the open-air bridge room and should retain the
+    // normal outdoor Dark Hour sky, exposure and bloom profile.
+    if (forest_temple_outside_bridge()) return false;
+
+    // Dungeon stage types are not consistent enough to identify every room.
+    // Use the room's authored vrbox flag instead: sky-enabled dungeon maps are
+    // exterior, while rooms without a vrbox use the indoor preset.
+    const bool dungeonStage = stageName != nullptr &&
+        (std::strncmp(stageName, "D_MN", 4) == 0 ||
+         std::strncmp(stageName, "D_SB", 4) == 0);
+    if (dungeonStage) {
+        auto* rooms = dComIfGp_getStageRoom();
+        const int room = dComIfGp_roomControl_getStayNo();
+        if (rooms != nullptr && room >= 0 && room < rooms->num &&
+            rooms->m_entries[room] != nullptr) {
+            return dStage_roomRead_dt_c_GetVrboxswitch(*rooms->m_entries[room]) == 0;
+        }
+    }
+
     auto* stage = dComIfGp_getStage();
     auto* stagInfo = stage != nullptr ? stage->getStagInfo() : nullptr;
     if (stagInfo == nullptr) return false;
@@ -76,6 +113,14 @@ bool g_windGustActive{};
 bool environment_active() {
     const char* stage = dComIfGp_getStartStageName();
     return active() && stage != nullptr && !palace_excluded();
+}
+
+bool dark_hour_dungeon_indoor() {
+    if (!dark_hour_indoor()) return false;
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr &&
+           (std::strncmp(stage, "D_MN", 4) == 0 ||
+            std::strncmp(stage, "D_SB", 4) == 0);
 }
 
 bool palace_dark_hour() {
@@ -265,14 +310,19 @@ void scale_light(J3DLightObj& light, float factor) {
 }
 
 // Dark Hour should keep the authored differences between areas, but bright
-// outdoor palettes must not turn into clipped neon when the green tint is
-// applied. Only compress the upper end; darker areas keep their current lift.
+// Outdoor palettes must not turn into clipped neon when the green tint is
+// applied. Indoor rooms use this same clamp before switching to blue.
 float dark_hour_environment_exposure(float luma) {
     constexpr float referenceLuma = 300.0f;
     constexpr float minimumExposure = 0.36f;
-    if (luma <= referenceLuma) return 1.0f;
-    const float outdoorExposure = std::clamp(referenceLuma / luma, minimumExposure, 1.0f);
-    return dark_hour_indoor() ? outdoorExposure * 0.72f : outdoorExposure;
+    const float outdoorExposure = luma <= referenceLuma
+        ? 1.0f
+        : std::clamp(referenceLuma / luma, minimumExposure, 1.0f);
+    // The Forest Temple bridge uses the outdoor sky, but its pale materials
+    // start much brighter than ordinary field terrain.
+    if (forest_temple_outside_bridge() || faron_woods()) return outdoorExposure * 0.56f;
+    if (dark_hour_dungeon_indoor()) return outdoorExposure * 0.42f;
+    return dark_hour_indoor() ? outdoorExposure * 0.68f : outdoorExposure;
 }
 
 // Bloom only processes the bright part of the finished frame. Keep the bloom
@@ -283,6 +333,12 @@ void tint_dark_hour_background_color(GXColorS10& color) {
     if (runtime_settings().style != Style::DarkHour) return;
     const float luma = std::max(0.0f, color.r * 0.25f + color.g * 0.65f + color.b * 0.10f);
     const float exposure = dark_hour_environment_exposure(luma);
+    if (dark_hour_indoor()) {
+        color.r = static_cast<s16>(std::clamp(14.0f + luma * 0.42f * exposure, 0.0f, 1023.0f));
+        color.g = static_cast<s16>(std::clamp(22.0f + luma * 0.60f * exposure, 0.0f, 1023.0f));
+        color.b = static_cast<s16>(std::clamp(36.0f + luma * 0.86f * exposure, 0.0f, 1023.0f));
+        return;
+    }
     color.r = scale_channel(color.r, 0.42f * exposure);
     color.g = scale_channel(color.g, 1.10f * exposure);
     color.b = scale_channel(color.b, 0.50f * exposure);
@@ -294,9 +350,42 @@ void tint_dark_hour_background_light(J3DLightObj& light) {
     const float luma = std::max(0.0f, info->mColor.r * 0.25f + info->mColor.g * 0.65f +
                                            info->mColor.b * 0.10f);
     const float exposure = dark_hour_environment_exposure(luma);
+    if (dark_hour_indoor()) {
+        info->mColor.r = static_cast<u8>(std::clamp(10.0f + luma * 0.42f * exposure, 0.0f, 255.0f));
+        info->mColor.g = static_cast<u8>(std::clamp(16.0f + luma * 0.60f * exposure, 0.0f, 255.0f));
+        info->mColor.b = static_cast<u8>(std::clamp(26.0f + luma * 0.86f * exposure, 0.0f, 255.0f));
+        return;
+    }
     info->mColor.r = scale_channel(info->mColor.r, 0.42f * exposure);
     info->mColor.g = scale_channel(info->mColor.g, 1.10f * exposure);
     info->mColor.b = scale_channel(info->mColor.b, 0.50f * exposure);
+}
+
+void apply_indoor_window_accent(dKy_tevstr_c& tev) {
+    if (runtime_settings().style != Style::DarkHour || !dark_hour_indoor()) return;
+
+    // Reuse one authored room light as the exterior spill. Keeping its native
+    // position, direction and attenuation makes the accent land on geometry
+    // naturally instead of washing the entire room teal.
+    int strongest = -1;
+    float strongestLuma = 0.0f;
+    for (int i = 0; i < 6; ++i) {
+        const GXColor& color = tev.mLights[i].getLightInfo()->mColor;
+        const float luma = color.r * 0.25f + color.g * 0.65f + color.b * 0.10f;
+        if (luma > strongestLuma) {
+            strongestLuma = luma;
+            strongest = i;
+        }
+    }
+    if (strongest < 0 || strongestLuma < 3.0f) return;
+
+    GXColor& color = tev.mLights[strongest].getLightInfo()->mColor;
+    const float accentScale = dark_hour_dungeon_indoor() ? 0.44f : 0.72f;
+    const float accentMaximum = dark_hour_dungeon_indoor() ? 70.0f : 112.0f;
+    const float energy = std::clamp(strongestLuma * accentScale, 14.0f, accentMaximum);
+    color.r = static_cast<u8>(std::clamp(energy * 0.28f, 0.0f, 255.0f));
+    color.g = static_cast<u8>(std::clamp(energy * 1.00f, 0.0f, 255.0f));
+    color.b = static_cast<u8>(std::clamp(energy * 0.48f, 0.0f, 255.0f));
 }
 
 void grayscale(GXColorS10& color) {
@@ -377,9 +466,20 @@ void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
         const GXColorS10& ambient = g_env_light.bg_amb_col[0];
         const float luma =
             std::max(0.0f, ambient.r * 0.20f + ambient.g * 0.70f + ambient.b * 0.10f);
-        fog.r = static_cast<s16>(std::clamp(luma * 0.20f, 0.0f, 1023.0f));
-        fog.g = static_cast<s16>(std::clamp(luma * 0.90f + 24.0f, 0.0f, 1023.0f));
-        fog.b = static_cast<s16>(std::clamp(luma * 0.32f, 0.0f, 1023.0f));
+        if (dark_hour_indoor()) {
+            fog.r = static_cast<s16>(std::clamp(luma * 0.08f + 4.0f, 0.0f, 1023.0f));
+            fog.g = static_cast<s16>(std::clamp(luma * 0.14f + 8.0f, 0.0f, 1023.0f));
+            fog.b = static_cast<s16>(std::clamp(luma * 0.24f + 14.0f, 0.0f, 1023.0f));
+            fogFar = std::clamp(fogFar > 100.0f ? fogFar : 5000.0f, 1200.0f, 6000.0f);
+            const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.58f;
+            fogNear = std::clamp(std::max(authoredNear, fogFar * 0.58f),
+                                 0.0f, fogFar - 1.0f);
+            return;
+        } else {
+            fog.r = static_cast<s16>(std::clamp(luma * 0.20f, 0.0f, 1023.0f));
+            fog.g = static_cast<s16>(std::clamp(luma * 0.90f + 24.0f, 0.0f, 1023.0f));
+            fog.b = static_cast<s16>(std::clamp(luma * 0.32f, 0.0f, 1023.0f));
+        }
         fogFar = std::clamp(fogFar > 100.0f ? fogFar : 7000.0f, 500.0f, 7000.0f);
         const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.18f;
         fogNear = std::clamp(std::min(authoredNear, fogFar * 0.24f), 0.0f, fogFar - 1.0f);
@@ -427,15 +527,22 @@ void apply_dark_hour_palette(dScnKy_env_light_c& env) {
     const auto tint = [](GXColorS10& color) {
         const float luma = std::max(0.0f, color.r * 0.25f + color.g * 0.65f + color.b * 0.10f);
         const float exposure = dark_hour_environment_exposure(luma);
-        color.r = static_cast<s16>(std::clamp(luma * 0.28f * exposure, 0.0f, 1023.0f));
-        color.g = static_cast<s16>(std::clamp(luma * 1.08f * exposure, 0.0f, 1023.0f));
-        color.b = static_cast<s16>(std::clamp(luma * 0.40f * exposure, 0.0f, 1023.0f));
+        if (dark_hour_indoor()) {
+            color.r = static_cast<s16>(std::clamp(14.0f + luma * 0.42f * exposure, 0.0f, 1023.0f));
+            color.g = static_cast<s16>(std::clamp(22.0f + luma * 0.60f * exposure, 0.0f, 1023.0f));
+            color.b = static_cast<s16>(std::clamp(36.0f + luma * 0.86f * exposure, 0.0f, 1023.0f));
+        } else {
+            color.r = static_cast<s16>(std::clamp(luma * 0.28f * exposure, 0.0f, 1023.0f));
+            color.g = static_cast<s16>(std::clamp(luma * 1.08f * exposure, 0.0f, 1023.0f));
+            color.b = static_cast<s16>(std::clamp(luma * 0.40f * exposure, 0.0f, 1023.0f));
+        }
     };
     // Palace uses the same Dark Hour high-end clamp as the overworld. Leaving
     // its authored ambient/dungeon values untouched is what caused bright
     // Palace rooms to blow out while other areas stayed regulated.
     for (int i = 0; i < 4; ++i) tint(env.bg_amb_col[i]);
     for (int i = 0; i < 6; ++i) tint(env.dungeonlight_col[i]);
+    if (dark_hour_indoor()) tint(env.actor_amb_col);
     // MFB supplied these colors before the host's visual-Twilight sky-volume response. Vanilla
     // has no separate visual query, so bake that response into the final cloud and haze colors.
     env.vrbox_sky_col = {15, 66, 29, env.vrbox_sky_col.a};
@@ -478,8 +585,21 @@ void apply_mfb_bloom_profile() {
     // Dark Hour uses the same authored Twilight bloom preset. Only the color is
     // changed below to keep its green identity; threshold, blur, density, and
     // blend strength must remain identical to regular Twilight.
-    const f32 darkHourScale = dark_hour_indoor() ? 0.82f : 1.0f;
-    bloom->setPoint(profile->info.mThreshold);
+    const bool indoor = dark_hour_indoor();
+    // Indoors, preserve the blue base grade but let bright authored details
+    // bloom in the exterior Dark Hour green. This creates localized glow
+    // without recoloring the room's ambient light.
+    const bool dungeonIndoor = dark_hour_dungeon_indoor();
+    const bool reducedOutdoor = forest_temple_outside_bridge() || faron_woods();
+    const f32 darkHourScale = reducedOutdoor ? 0.56f
+        : (dungeonIndoor ? 0.34f : (indoor ? 0.58f : 1.0f));
+    const int threshold = reducedOutdoor
+        ? std::min(255, static_cast<int>(profile->info.mThreshold) + 34)
+        : indoor
+        ? std::min(255, static_cast<int>(profile->info.mThreshold) +
+                            (dungeonIndoor ? 56 : 32))
+        : profile->info.mThreshold;
+    bloom->setPoint(static_cast<u8>(threshold));
     static s16 pulsePhase{};
     const f32 pulse = cM_ssin(pulsePhase);
     pulsePhase += static_cast<s16>(cM_rndF(2000.0f) + 500.0f);
@@ -544,9 +664,15 @@ void set_light_post(ModContext*, void* args, void*, void*) {
         blend.b = 130;
         mono.a = 0;
     } else if (runtime_settings().style == Style::DarkHour) {
-        blend.r = 24;
-        blend.g = 220;
-        blend.b = 52;
+        if (dark_hour_indoor()) {
+            blend.r = 30;
+            blend.g = 210;
+            blend.b = 66;
+        } else {
+            blend.r = 24;
+            blend.g = 220;
+            blend.b = 52;
+        }
         mono.a = 0;
     } else if (runtime_settings().style == Style::BlackAndWhite) {
         grayscale(blend);
@@ -586,6 +712,7 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
         tint_dark_hour_background_light(tev->mLights[i]);
         tint_astral_light(tev->mLights[i], i == 1 || i == 4);
     }
+    apply_indoor_window_accent(*tev);
     scale_color(*fog, factor);
     if (runtime_settings().style == Style::BlackAndWhite) {
         for (int i = 0; i < 4; ++i) grayscale(colors[i]);
@@ -602,12 +729,15 @@ void set_light_actor_post(ModContext*, void* args, void*, void*) {
     auto* fogNear = mods::arg<float*>(args, 3);
     auto* fogFar = mods::arg<float*>(args, 4);
     apply_distance_fog(*fog, *fogNear, *fogFar);
+    if (dark_hour_indoor()) tint_dark_hour_background_color(tev->AmbCol);
     const float factor = brightness();
     scale_color(tev->AmbCol, factor);
     for (int i = 0; i < 6; ++i) {
+        if (dark_hour_indoor()) tint_dark_hour_background_light(tev->mLights[i]);
         scale_light(tev->mLights[i], factor);
         tint_astral_light(tev->mLights[i], i == 1 || i == 4);
     }
+    apply_indoor_window_accent(*tev);
     scale_color(*fog, factor);
     boundary::end_visual_environment();
 }

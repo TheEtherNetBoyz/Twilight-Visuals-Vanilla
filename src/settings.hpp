@@ -17,6 +17,7 @@ struct Settings {
     ConfigVarHandle legacyBloom{};
     ConfigVarHandle overrideTempleMusic{};
     ConfigVarHandle skywardSwordRunning{};
+    ConfigVarHandle sheathSwordWhileSprinting{};
     ConfigVarHandle skywardSwordWallRunning{};
     ConfigVarHandle humanWolfSenses{};
     ConfigVarHandle excludePalaceOfTwilight{};

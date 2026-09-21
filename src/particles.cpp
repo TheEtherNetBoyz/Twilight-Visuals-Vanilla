@@ -5,6 +5,7 @@
 #include "compat.hpp"
 #include "runtime.hpp"
 #include "boundary.hpp"
+#include "environment.hpp"
 #include "mods/service.hpp"
 #include "hook_api.hpp"
 #include "d/d_com_inf_game.h"
@@ -242,6 +243,10 @@ void initialize_dark_hour_moon_packet() {
 void force_dark_hour_moon_room() {
     restore_forced_moon_room();
     if (!dark_hour_moon_active()) return;
+    // Interior dungeon rooms intentionally have no sky volume. Do not mutate
+    // their authored vrbox flag merely to create the outdoor moon packet;
+    // doing so also makes indoor/outdoor lighting classification impossible.
+    if (environment::dark_hour_indoor()) return;
     auto* room = dComIfGp_getStageRoom();
     const int stayNo = dComIfGp_roomControl_getStayNo();
     if (room == nullptr || stayNo < 0 || room->num <= stayNo || room->m_entries[stayNo] == nullptr)

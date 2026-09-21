@@ -194,6 +194,9 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Hold A while moving as human Link to run at 37 units. Includes the custom attack, roll, "
         "snow, and Magic Armor water-running behavior.",
         g_settings.skywardSwordRunning);
+    add_toggle(left, "Put Sword Away When Sprinting",
+        "Automatically sheath Link's sword once when Skyward Sword sprinting begins.",
+        g_settings.sheathSwordWhileSprinting);
     add_toggle(left, "SS Wall Running",
         "Enable Skyward Sword-style wall running, short-wall step-up, and ledge-grab behavior "
         "while Skyward Sword Running is enabled.",
@@ -317,6 +320,9 @@ ModResult register_settings(ModError*) {
     result = register_bool("override-temple-music", false, g_settings.overrideTempleMusic);
     if (result != MOD_OK) return result;
     result = register_bool("skyward-sword-running", false, g_settings.skywardSwordRunning);
+    if (result != MOD_OK) return result;
+    result = register_bool("sheath-sword-while-sprinting", false,
+                           g_settings.sheathSwordWhileSprinting);
     if (result != MOD_OK) return result;
     result = register_bool("skyward-sword-wall-running", false,
                            g_settings.skywardSwordWallRunning);

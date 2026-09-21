@@ -76,6 +76,8 @@ DEFINE_HOOK(&daAlink_c::procCoMetamorphoseInit, TransformInit);
 unsigned moveAnimationDepth = 0;
 daAlink_c* sprintRollPlayer = nullptr;
 f32 sprintRollSpeed = 0.0f;
+daAlink_c* sprintSheathPlayer = nullptr;
+bool sprintSheathHandled = false;
 
 HookAction front_wall_action_pre(ModContext*, void* args, void* retval, void*) {
     auto* p = mods::arg<daAlink_c*>(args, 0);
@@ -146,8 +148,23 @@ void auto_jump_init_post(ModContext*, void* args, void*, void*) {
 
 void apply_run_speed(daAlink_c* p) {
     if (p != nullptr && moving(p) && grounded(p)) {
+        if (sprintSheathPlayer != p) {
+            sprintSheathPlayer = p;
+            sprintSheathHandled = false;
+        }
+        if (runtime_settings().sheathSwordWhileSprinting && !sprintSheathHandled) {
+            if (p->mEquipItem != 0x103) {
+                sprintSheathHandled = true;
+            } else if (!p->checkEquipAnime()) {
+                p->swordUnequip();
+                sprintSheathHandled = true;
+            }
+        }
         p->mNormalSpeed = run_speed(p);
         p->speedF = p->mNormalSpeed;
+    } else if (p == sprintSheathPlayer) {
+        sprintSheathPlayer = nullptr;
+        sprintSheathHandled = false;
     }
 }
 
@@ -471,6 +488,8 @@ void shutdown() {
     inputPlayer = nullptr;
     mods::hook::uninstall<PlayerExecute>();
     sprintRollPlayer = nullptr;
+    sprintSheathPlayer = nullptr;
+    sprintSheathHandled = false;
     mods::hook::uninstall<RollUpdate>();
     mods::hook::uninstall<RollInit>();
     mods::hook::uninstall<Move>();
