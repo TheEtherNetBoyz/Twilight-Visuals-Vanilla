@@ -12,6 +12,7 @@
 #include "d/d_meter2_info.h"
 #include "run_hold.hpp"
 #include <algorithm>
+#include <cstring>
 #include <cstdio>
 namespace twilight_visuals::running {
 namespace {
@@ -46,8 +47,20 @@ bool held(daAlink_c* p) {
     return enabled(p) && inputPlayer == p && aButton.running() && p->doButton();
 }
 bool moving(daAlink_c* p) { return held(p) && p->mProcID == daAlink_c::PROC_MOVE && p->mStickValue > 0.1f; }
+bool dungeon_stage() {
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr &&
+        (std::strncmp(stage, "D_MN", 4) == 0 ||
+         std::strncmp(stage, "D_SB", 4) == 0);
+}
+bool sand_surface(daAlink_c* p) {
+    return p != nullptr && p->mLinkAcch.ChkGroundHit() &&
+           p->mGndPolyAtt0 == 3 && !p->checkSnowCode();
+}
 f32 run_speed(daAlink_c* p) {
-    return 37.0f * (p->checkEquipHeavyBoots() ? 0.70f : 1.0f);
+    const f32 baseSpeed = dungeon_stage() ? 34.0f : 37.0f;
+    const bool slowed = p->checkEquipHeavyBoots() || sand_surface(p);
+    return baseSpeed * (slowed ? 0.70f : 1.0f);
 }
 bool water(daAlink_c* p) {
     if (!held(p) || !p->checkMagicArmorWearAbility() || p->checkMagneBootsOn() || p->mWaterY == -G_CM3D_F_INF) return false;

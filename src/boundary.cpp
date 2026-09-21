@@ -68,6 +68,7 @@ static bool is_palace_stage() {
 static bool dark_hour_visual_effects_active() {
     const char* stage = dComIfGp_getStartStageName();
     return active() && runtime_settings().style == Style::DarkHour &&
+           s_visual_environment_depth != 0 &&
            stage != nullptr && dComIfGp_getStage() != nullptr &&
            fopAcM_SearchByName(fpcNm_TITLE_e) == nullptr && !palace_excluded();
 }
@@ -155,13 +156,10 @@ void commit() {
 
 HookAction environment_execute_pre(ModContext*, void*, void*, void*) {
     update();
-    begin_visual_environment();
     return HOOK_CONTINUE;
 }
 
-void environment_execute_post(ModContext*, void*, void*, void*) {
-    end_visual_environment();
-}
+void environment_execute_post(ModContext*, void*, void*, void*) {}
 
 HookAction visual_effect_pre(ModContext*, void*, void*, void*) {
     begin_visual_environment();
@@ -247,15 +245,11 @@ void background_material_light_post(ModContext*, void*, void*, void*) {
 }
 
 HookAction native_darkworld_check_pre(ModContext*, void*, void* retval, void*) {
-    // MFB's visual-Twilight provider is global: background materials, actors,
-    // shadow setup, light sizing, and bloom all consume the same result. The
-    // old Vanilla port only forced this while one of its temporary hook scopes
-    // was open and skipped Palace entirely, which left the emissive floor on
-    // the Dark Hour path while distant geometry stayed on the normal path.
-    // MFB's ForceMoon path temporarily bypasses the visual-darkworld result
-    // so vanilla can allocate its native sun/moon packet. Keep the bypass
-    // scoped to the weather tick; all other lighting paths still see the
-    // unified Dark Hour result.
+    // Dark Hour emulates Twilight visually; it must not report native Twilight
+    // to gameplay, actor, HUD, or event systems. Return the visual state only
+    // while one of our lighting/render hooks owns the environment scope.
+    // ForceMoon still bypasses this narrow visual result while allocating the
+    // native celestial packet.
     if (s_native_moon_initialization) return HOOK_CONTINUE;
     if (!dark_hour_visual_effects_active())
         return HOOK_CONTINUE;
