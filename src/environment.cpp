@@ -44,6 +44,10 @@ bool reduced_dark_hour_outdoor() {
     return forest_temple_outside_bridge() || faron_woods() || castle_town();
 }
 
+float reduced_dark_hour_outdoor_scale() {
+    return castle_town() ? 0.68f : 0.56f;
+}
+
 bool dark_hour_indoor() {
     if (!runtime_settings().enabled || runtime_settings().style != Style::DarkHour) return false;
     const char* stageName = dComIfGp_getStartStageName();
@@ -329,7 +333,7 @@ float dark_hour_environment_exposure(float luma) {
         : std::clamp(referenceLuma / luma, minimumExposure, 1.0f);
     // The Forest Temple bridge uses the outdoor sky, but its pale materials
     // start much brighter than ordinary field terrain.
-    if (reduced_dark_hour_outdoor()) return outdoorExposure * 0.56f;
+    if (reduced_dark_hour_outdoor()) return outdoorExposure * reduced_dark_hour_outdoor_scale();
     if (dark_hour_dungeon_indoor()) return outdoorExposure * 0.42f;
     return dark_hour_indoor() ? outdoorExposure * 0.68f : outdoorExposure;
 }
@@ -395,6 +399,35 @@ void apply_indoor_window_accent(dKy_tevstr_c& tev) {
     color.r = static_cast<u8>(std::clamp(energy * 0.28f, 0.0f, 255.0f));
     color.g = static_cast<u8>(std::clamp(energy * 1.00f, 0.0f, 255.0f));
     color.b = static_cast<u8>(std::clamp(energy * 0.48f, 0.0f, 255.0f));
+}
+
+void apply_outdoor_moonlight(dKy_tevstr_c& tev) {
+    if (runtime_settings().style != Style::DarkHour || dark_hour_indoor()) return;
+
+    // Preserve the stage-authored direction and attenuation, but turn its
+    // strongest light into a restrained moon key. This gives actors and drops
+    // a readable green-white highlight without lifting the ambient exposure.
+    int strongest = -1;
+    float strongestLuma = 0.0f;
+    for (int i = 0; i < 6; ++i) {
+        const GXColor& color = tev.mLights[i].getLightInfo()->mColor;
+        const float luma = color.r * 0.25f + color.g * 0.65f + color.b * 0.10f;
+        if (luma > strongestLuma) {
+            strongestLuma = luma;
+            strongest = i;
+        }
+    }
+    if (strongest >= 0) {
+        GXColor& color = tev.mLights[strongest].getLightInfo()->mColor;
+        const float energy = std::clamp(strongestLuma, 58.0f, 108.0f);
+        color.r = static_cast<u8>(std::clamp(energy * 0.58f, 0.0f, 255.0f));
+        color.g = static_cast<u8>(std::clamp(energy, 0.0f, 255.0f));
+        color.b = static_cast<u8>(std::clamp(energy * 0.76f, 0.0f, 255.0f));
+    }
+
+    // Vanilla projected shadows (including simple item-drop shadows) multiply
+    // their opacity by this per-object environment value.
+    tev.field_0x344 = std::clamp(std::max(tev.field_0x344, 0.72f), 0.0f, 1.0f);
 }
 
 void grayscale(GXColorS10& color) {
@@ -600,7 +633,7 @@ void apply_mfb_bloom_profile() {
     // without recoloring the room's ambient light.
     const bool dungeonIndoor = dark_hour_dungeon_indoor();
     const bool reducedOutdoor = reduced_dark_hour_outdoor();
-    const f32 darkHourScale = reducedOutdoor ? 0.56f
+    const f32 darkHourScale = reducedOutdoor ? reduced_dark_hour_outdoor_scale()
         : (dungeonIndoor ? 0.34f : (indoor ? 0.58f : 1.0f));
     const int threshold = reducedOutdoor
         ? std::min(255, static_cast<int>(profile->info.mThreshold) + 34)
@@ -722,6 +755,7 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
         tint_astral_light(tev->mLights[i], i == 1 || i == 4);
     }
     apply_indoor_window_accent(*tev);
+    apply_outdoor_moonlight(*tev);
     scale_color(*fog, factor);
     if (runtime_settings().style == Style::BlackAndWhite) {
         for (int i = 0; i < 4; ++i) grayscale(colors[i]);
@@ -747,6 +781,7 @@ void set_light_actor_post(ModContext*, void* args, void*, void*) {
         tint_astral_light(tev->mLights[i], i == 1 || i == 4);
     }
     apply_indoor_window_accent(*tev);
+    apply_outdoor_moonlight(*tev);
     scale_color(*fog, factor);
     boundary::end_visual_environment();
 }

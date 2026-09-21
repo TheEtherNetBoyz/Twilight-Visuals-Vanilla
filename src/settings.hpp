@@ -8,6 +8,11 @@ struct Settings {
     ConfigVarHandle enabled{};
     ConfigVarHandle style{};
     ConfigVarHandle brightness{};
+    ConfigVarHandle perAreaBrightness{};
+    ConfigVarHandle currentAreaBrightness{};
+    ConfigVarHandle faronBrightness{};
+    ConfigVarHandle castleTownBrightness{};
+    ConfigVarHandle forestTempleExteriorBrightness{};
     ConfigVarHandle chromaticAberration{};
     ConfigVarHandle skybox{};
     ConfigVarHandle weather{};
@@ -36,5 +41,6 @@ void close_settings_window();
 
 bool get_bool(ConfigVarHandle handle, bool fallback = false);
 int64_t get_int(ConfigVarHandle handle, int64_t fallback = 0);
+int64_t current_area_brightness_percent();
 
 }  // namespace twilight_visuals

@@ -4,9 +4,11 @@
 #include "mods/service.hpp"
 #include "mods/svc/ui.h"
 #include "d/actor/d_a_alink.h"
+#include "d/d_com_inf_game.h"
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(UiService, svc_ui);
@@ -17,6 +19,7 @@ Settings g_settings;
 UiWindowHandle g_settingsWindow{};
 UiWindowHandle g_faceWindow{};
 UiMenuTabHandle g_quickMenuTab{};
+ConfigVarHandle g_areaEditorTarget{};
 
 constexpr std::array<const char*, 4> kStyles{
     "Normal Twilight", "Black and White", "Astral Plane", "The Dark Hour"};
@@ -145,6 +148,25 @@ void add_number(UiElementHandle pane, const char* label, const char* help, Confi
     add_control(pane, control);
 }
 
+ConfigVarHandle current_area_brightness_handle() {
+    const char* stage = dComIfGp_getStartStageName();
+    if (stage == nullptr) return 0;
+    if (std::strcmp(stage, "F_SP108") == 0) return g_settings.faronBrightness;
+    if (std::strcmp(stage, "F_SP116") == 0 || std::strcmp(stage, "R_SP116") == 0 ||
+        std::strcmp(stage, "R_SP160") == 0 || std::strcmp(stage, "R_SP161") == 0 ||
+        std::strcmp(stage, "F_SP121") == 0)
+        return g_settings.castleTownBrightness;
+    if (std::strcmp(stage, "D_MN05") == 0 && dComIfGp_roomControl_getStayNo() == 4)
+        return g_settings.forestTempleExteriorBrightness;
+    return 0;
+}
+
+void prepare_current_area_brightness_editor() {
+    g_areaEditorTarget = current_area_brightness_handle();
+    const int64_t value = get_int(g_areaEditorTarget, 100);
+    svc_config->set_int(mod_ctx, g_settings.currentAreaBrightness, value);
+}
+
 ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     UiElementHandle right, void*, ModError*) {
     (void)right;
@@ -160,6 +182,12 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     add_number(left, "Brightness",
         "Adjust complete environment lighting and bloom intensity.", g_settings.brightness, 0,
         120, 5, "%");
+    add_toggle(left, "Per-Area Brightness",
+        "Apply the separately saved brightness percentage for the loaded area.",
+        g_settings.perAreaBrightness);
+    add_number(left, "Current Area Brightness",
+        "Adjust the loaded area's brightness. Its value is saved separately when supported.",
+        g_settings.currentAreaBrightness, 25, 150, 5, "%");
     add_number(left, "Astral Chromatic Aberration",
         "Adjust Astral Plane red/blue edge separation.", g_settings.chromaticAberration, 0, 200,
         5, "%");
@@ -233,6 +261,7 @@ void settings_window_closed(ModContext*, UiWindowHandle, void*) { g_settingsWind
 
 void open_settings_window(ModContext*, void*) {
     if (g_settingsWindow != 0) return;
+    prepare_current_area_brightness_editor();
     UiTabDesc tabs[1] = {UI_TAB_DESC_INIT};
     tabs[0].title = "Twilight Visuals";
     tabs[0].build = build_settings_tab;
@@ -296,12 +325,36 @@ int64_t get_int(ConfigVarHandle handle, int64_t fallback) {
     return handle != 0 && svc_config->get_int(mod_ctx, handle, &value) == MOD_OK ? value : fallback;
 }
 
+int64_t current_area_brightness_percent() {
+    if (!get_bool(g_settings.perAreaBrightness)) return 100;
+    const ConfigVarHandle current = current_area_brightness_handle();
+    if (current == 0) return 100;
+    if (current == g_areaEditorTarget) {
+        const int64_t edited = std::clamp<int64_t>(
+            get_int(g_settings.currentAreaBrightness, 100), 25, 150);
+        if (edited != get_int(current, 100)) svc_config->set_int(mod_ctx, current, edited);
+        return edited;
+    }
+    return get_int(current, 100);
+}
+
 ModResult register_settings(ModError*) {
     ModResult result = register_bool("twilight-visuals", false, g_settings.enabled);
     if (result != MOD_OK) return result;
     result = register_int("visual-style", 0, g_settings.style);
     if (result != MOD_OK) return result;
     result = register_int("brightness", 100, g_settings.brightness);
+    if (result != MOD_OK) return result;
+    result = register_bool("per-area-brightness", false, g_settings.perAreaBrightness);
+    if (result != MOD_OK) return result;
+    result = register_int("current-area-brightness", 100, g_settings.currentAreaBrightness);
+    if (result != MOD_OK) return result;
+    result = register_int("area-brightness-faron", 100, g_settings.faronBrightness);
+    if (result != MOD_OK) return result;
+    result = register_int("area-brightness-castle-town", 100, g_settings.castleTownBrightness);
+    if (result != MOD_OK) return result;
+    result = register_int("area-brightness-forest-temple-exterior", 100,
+                          g_settings.forestTempleExteriorBrightness);
     if (result != MOD_OK) return result;
     result = register_int("chromatic-aberration", 80, g_settings.chromaticAberration);
     if (result != MOD_OK) return result;

@@ -47,7 +47,8 @@ void refresh_runtime_settings() {
     g_runtime.style = static_cast<Style>(std::clamp<std::int64_t>(get_int(config.style), 0, 3));
     g_runtime.brightness =
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.brightness, 100), 0, 120)) /
-        100.0f;
+        100.0f * static_cast<float>(std::clamp<std::int64_t>(
+            current_area_brightness_percent(), 25, 150)) / 100.0f;
     g_runtime.chromaticAberration =
         static_cast<int>(std::clamp<std::int64_t>(get_int(config.chromaticAberration, 80), 0, 200));
     g_runtime.skybox =
