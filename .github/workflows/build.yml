@@ -79,12 +79,15 @@ jobs:
           -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
 
       - name: Configure Dusklight host
+        # Xcode 15's libc++ gates jthread behind -fexperimental-library. Aurora's
+        # system_info.cpp also relies on TargetConditionals macros without including
+        # TargetConditionals.h itself, so force-include the SDK header for this build.
         run: >-
           cmake -S dusklight -B "$RUNNER_TEMP/dusklight-build" -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_STANDARD=20
           -DCMAKE_CXX_STANDARD_REQUIRED=ON
-          -DCMAKE_CXX_FLAGS=-fexperimental-library
+          -DCMAKE_CXX_FLAGS="-fexperimental-library -include TargetConditionals.h"
           -DCMAKE_OSX_ARCHITECTURES=arm64
           -DDUSK_ENABLE_CODE_MODS=ON
           -DDUSK_ENABLE_OPUS=OFF
@@ -100,7 +103,7 @@ jobs:
           -DCMAKE_OSX_ARCHITECTURES=arm64
           -DCMAKE_CXX_STANDARD=20
           -DCMAKE_CXX_STANDARD_REQUIRED=ON
-          -DCMAKE_CXX_FLAGS=-fexperimental-library
+          -DCMAKE_CXX_FLAGS="-fexperimental-library -include TargetConditionals.h"
           -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
           -DDUSKLIGHT_BUILD_DIR="$RUNNER_TEMP/dusklight-build"
           -DDUSK_GAME_EXE="$RUNNER_TEMP/dusklight-build/Dusklight.app/Contents/MacOS/Dusklight"
