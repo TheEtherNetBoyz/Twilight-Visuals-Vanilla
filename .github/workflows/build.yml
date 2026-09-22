@@ -82,6 +82,9 @@ jobs:
         run: >-
           cmake -S dusklight -B "$RUNNER_TEMP/dusklight-build" -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_STANDARD=20
+          -DCMAKE_CXX_STANDARD_REQUIRED=ON
+          -DCMAKE_CXX_FLAGS=-fexperimental-library
           -DCMAKE_OSX_ARCHITECTURES=arm64
           -DDUSK_ENABLE_CODE_MODS=ON
           -DDUSK_ENABLE_OPUS=OFF
@@ -95,6 +98,9 @@ jobs:
         run: >-
           cmake -S . -B build-ci-macos -G Ninja
           -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_CXX_STANDARD=20
+          -DCMAKE_CXX_STANDARD_REQUIRED=ON
+          -DCMAKE_CXX_FLAGS=-fexperimental-library
           -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
           -DDUSKLIGHT_BUILD_DIR="$RUNNER_TEMP/dusklight-build"
           -DDUSK_GAME_EXE="$RUNNER_TEMP/dusklight-build/Dusklight.app/Contents/MacOS/Dusklight"
