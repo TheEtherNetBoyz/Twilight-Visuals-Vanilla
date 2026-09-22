@@ -26,5 +26,22 @@ cmake --build build --target twilight_visuals_package
 The bundle is written to `build/mods/twilight_visuals.dusk`. The same project
 can fetch the pinned revision automatically when `DUSKLIGHT_DIR` is omitted.
 
+On macOS, use an arm64 build and point `DUSK_GAME_EXE` at the local Dusklight
+application executable so the mod links against the exact game build you will
+test:
+
+```sh
+cmake -S . -B build-macos -G Ninja \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DDUSK_GAME_EXE="/path/to/Dusklight.app/Contents/MacOS/Dusklight" \
+  -DDUSKLIGHT_DIR="/path/to/dusklight" \
+  -DDUSKLIGHT_BUILD_DIR="/path/to/dusklight/build/macos-default-relwithdebinfo"
+cmake --build build-macos --target twilight_visuals_package
+```
+
+The macOS package contains `lib/macos-arm64/mod.so` and can be copied into the
+test app's `mods` directory. The mod's platform layer keeps Dusklight and
+Aurora read-only.
+
 The hook design follows Dusklight's official
 [Hooking Game Functions guide](https://github.com/TwilitRealm/dusklight/blob/main/docs/modding.md#hooking-game-functions).

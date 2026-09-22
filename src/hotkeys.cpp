@@ -10,9 +10,13 @@
 #include "aurora/texture.hpp"
 #include <SDL3/SDL.h>
 
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 #include <array>
 #include <memory>
@@ -69,6 +73,20 @@ constexpr int64_t kControllerButtonBase = 1000;
 constexpr int64_t kControllerAxisBase = 2000;
 constexpr Sint16 kTriggerThreshold = 16000;
 
+template <typename Function>
+Function resolve_sdl_function(const char* name) {
+#if defined(_WIN32)
+    static HMODULE module = [] {
+        HMODULE result = GetModuleHandleA("SDL3.dll");
+        if (result == nullptr) result = GetModuleHandleA("SDL3-shared.dll");
+        return result;
+    }();
+    return module == nullptr ? nullptr : reinterpret_cast<Function>(GetProcAddress(module, name));
+#else
+    return reinterpret_cast<Function>(dlsym(RTLD_DEFAULT, name));
+#endif
+}
+
 ConfigVarHandle binding_var(Action action) {
     switch (action) {
     case Action::Gyro: return settings().hotkeyGyro;
@@ -88,22 +106,18 @@ const char* action_name(Action action) {
 }
 
 void resolve_sdl() {
-    HMODULE module = GetModuleHandleA("SDL3.dll");
-    if (module == nullptr) module = GetModuleHandleA("SDL3-shared.dll");
-    if (module == nullptr) return;
-    s_getKeyboardState = reinterpret_cast<decltype(s_getKeyboardState)>(
-        GetProcAddress(module, "SDL_GetKeyboardState"));
-    s_getScancodeName = reinterpret_cast<decltype(s_getScancodeName)>(
-        GetProcAddress(module, "SDL_GetScancodeName"));
-    s_getGamepads = reinterpret_cast<decltype(s_getGamepads)>(
-        GetProcAddress(module, "SDL_GetGamepads"));
-    s_getGamepadFromID = reinterpret_cast<decltype(s_getGamepadFromID)>(
-        GetProcAddress(module, "SDL_GetGamepadFromID"));
-    s_getGamepadButton = reinterpret_cast<decltype(s_getGamepadButton)>(
-        GetProcAddress(module, "SDL_GetGamepadButton"));
-    s_getGamepadAxis = reinterpret_cast<decltype(s_getGamepadAxis)>(
-        GetProcAddress(module, "SDL_GetGamepadAxis"));
-    s_sdlFree = reinterpret_cast<decltype(s_sdlFree)>(GetProcAddress(module, "SDL_free"));
+    s_getKeyboardState = resolve_sdl_function<decltype(s_getKeyboardState)>(
+        "SDL_GetKeyboardState");
+    s_getScancodeName = resolve_sdl_function<decltype(s_getScancodeName)>(
+        "SDL_GetScancodeName");
+    s_getGamepads = resolve_sdl_function<decltype(s_getGamepads)>("SDL_GetGamepads");
+    s_getGamepadFromID = resolve_sdl_function<decltype(s_getGamepadFromID)>(
+        "SDL_GetGamepadFromID");
+    s_getGamepadButton = resolve_sdl_function<decltype(s_getGamepadButton)>(
+        "SDL_GetGamepadButton");
+    s_getGamepadAxis = resolve_sdl_function<decltype(s_getGamepadAxis)>(
+        "SDL_GetGamepadAxis");
+    s_sdlFree = resolve_sdl_function<decltype(s_sdlFree)>("SDL_free");
 }
 
 void refresh_gamepads() {

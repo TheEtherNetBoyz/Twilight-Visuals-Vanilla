@@ -59,3 +59,55 @@ jobs:
           name: twilight-visuals-vanilla
           path: build-ci/mods/twilight_visuals.dusk
           if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out mod source
+        uses: actions/checkout@v4
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Set up Ninja
+        run: brew install ninja
+
+      - name: Fetch Dusklight source
+        run: >-
+          cmake -S . -B build-fetch-macos -G Ninja
+          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
+
+      - name: Configure Dusklight host
+        run: >-
+          cmake -S dusklight -B "$RUNNER_TEMP/dusklight-build" -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DDUSK_ENABLE_CODE_MODS=ON
+          -DDUSK_ENABLE_OPUS=OFF
+
+      - name: Build Dusklight host
+        run: >-
+          cmake --build "$RUNNER_TEMP/dusklight-build"
+          --target dusklight --parallel
+
+      - name: Configure macOS mod
+        run: >-
+          cmake -S . -B build-ci-macos -G Ninja
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
+          -DDUSKLIGHT_BUILD_DIR="$RUNNER_TEMP/dusklight-build"
+          -DDUSK_GAME_EXE="$RUNNER_TEMP/dusklight-build/Dusklight.app/Contents/MacOS/Dusklight"
+          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
+
+      - name: Build macOS mod package
+        run: >-
+          cmake --build build-ci-macos
+          --target twilight_visuals_package --parallel
+
+      - name: Upload macOS mod package
+        uses: actions/upload-artifact@v4
+        with:
+          name: twilight-visuals-vanilla-macos-arm64
+          path: build-ci-macos/mods/twilight_visuals.dusk
+          if-no-files-found: error

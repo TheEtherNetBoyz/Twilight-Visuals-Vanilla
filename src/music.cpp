@@ -15,9 +15,7 @@
 #include "Z2AudioLib/Z2Param.h"
 #include "Z2AudioLib/Z2SeqMgr.h"
 #include "mods/svc/log.h"
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
+#include "platform.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -33,6 +31,17 @@ bool is_boss_bgm(u32 id);
 void update_from_manager(Z2SeqMgr* manager);
 namespace {
 using dusk::audio::TwilightMusicFade;
+
+bool init_mp3(drmp3* decoder, const std::filesystem::path& path) {
+#if defined(_WIN32)
+    return drmp3_init_file_w(decoder, path.c_str(), nullptr) != 0;
+#else
+    const auto utf8_path = path.u8string();
+    return drmp3_init_file(decoder,
+        reinterpret_cast<const char*>(utf8_path.c_str()), nullptr) != 0;
+#endif
+}
+
 struct Track {
     drmp3 decoder{};
     std::filesystem::path path;
@@ -56,7 +65,7 @@ struct Track {
     void open(const std::filesystem::path& file) {
         close();
         path = file;
-        available = drmp3_init_file_w(&decoder, path.c_str(), nullptr) != 0;
+        available = init_mp3(&decoder, path);
         if (available && (decoder.channels == 0 || decoder.channels > 2 || decoder.sampleRate == 0))
             close();
         const auto name = path.u8string();
@@ -69,7 +78,7 @@ struct Track {
         if (!drmp3_seek_to_pcm_frame(&decoder, 0)) {
             drmp3_uninit(&decoder);
             decoder = {};
-            available = drmp3_init_file_w(&decoder, path.c_str(), nullptr) != 0;
+            available = init_mp3(&decoder, path);
         }
         frameIndex = frameCount = 0;
         return available;
@@ -418,15 +427,13 @@ bool is_boss_bgm(u32 id) {
     }
 }
 ModResult initialize() {
-    std::array<wchar_t, 32768> exe{};
-    const DWORD length = GetModuleFileNameW(nullptr, exe.data(), static_cast<DWORD>(exe.size()));
-    if (!length || length >= exe.size()) return MOD_UNAVAILABLE;
-    const auto directory = std::filesystem::path(exe.data()).parent_path();
-    AstralMp3Ambient.open(directory / L"Astral Plane.mp3");
-    AstralMp3Combat.open(directory / L"Astral Plane CM.mp3");
-    DarkHourAmbient.open(directory / L"tartarus 0d06.mp3");
-    DarkHourCombat.open(directory / L"Mass Destruction.mp3");
-    MasterOfShadow.open(directory / L"Master of Shadow.mp3");
+    const auto directory = platform::executable_directory();
+    if (directory.empty()) return MOD_UNAVAILABLE;
+    AstralMp3Ambient.open(directory / "Astral Plane.mp3");
+    AstralMp3Combat.open(directory / "Astral Plane CM.mp3");
+    DarkHourAmbient.open(directory / "tartarus 0d06.mp3");
+    DarkHourCombat.open(directory / "Mass Destruction.mp3");
+    MasterOfShadow.open(directory / "Master of Shadow.mp3");
     if (mods::hook::add_pre<RegisterMixCallback>(register_mix_pre) != MOD_OK)
         return MOD_UNSUPPORTED;
     mixHookInstalled = true;

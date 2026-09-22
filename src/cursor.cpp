@@ -8,6 +8,7 @@
 #include "mods/service.hpp"
 #include "hook_api.hpp"
 #include "mods/svc/ui.h"
+#include "service_refs.hpp"
 
 #include <cstring>
 
@@ -24,6 +25,7 @@ using VisibilityQuery = bool (*)();
 VisibilityQuery s_imguiWindowsVisible{};
 bool s_sawInputViewer{};
 bool s_sawOtherImGuiWindow{};
+bool s_cursorVisibilityHook{};
 
 HookAction imgui_begin_pre(ModContext*, void* args, void*, void*) {
     const char* name = mods::arg<const char*>(args, 0);
@@ -96,18 +98,31 @@ ModResult initialize() {
     }
     result = mods::hook::add_pre<SetCursorVisible>(set_cursor_visible_pre);
     if (result != MOD_OK) {
+#if defined(__APPLE__)
+        // This is a convenience hook. Some platform builds do not export the host's
+        // private cursor helper, but the rest of the mod can operate without it.
+        svc_log->warn(mod_ctx, "Gameplay cursor visibility hook unavailable; leaving host cursor behavior unchanged.");
         mods::hook::uninstall<MouseRead>();
         mods::hook::uninstall<ImGuiBegin>();
+        return MOD_OK;
+#else
+        mods::hook::uninstall<MouseRead>();
+        mods::hook::uninstall<ImGuiBegin>();
+        return result;
+#endif
+    } else {
+        s_cursorVisibilityHook = true;
     }
-    return result;
+    return MOD_OK;
 }
 
 void update() {}
 
 void shutdown() {
-    mods::hook::uninstall<SetCursorVisible>();
+    if (s_cursorVisibilityHook) mods::hook::uninstall<SetCursorVisible>();
     mods::hook::uninstall<MouseRead>();
     mods::hook::uninstall<ImGuiBegin>();
+    s_cursorVisibilityHook = false;
     s_imguiWindowsVisible = nullptr;
     s_sawInputViewer = false;
     s_sawOtherImGuiWindow = false;

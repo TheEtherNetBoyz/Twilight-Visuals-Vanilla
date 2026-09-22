@@ -92,12 +92,18 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
 
     result = twilight_visuals::native_face_tuner::initialize();
     if (result != MOD_OK) {
+#if defined(__APPLE__)
+        // The native graphics-tuner integration is optional on macOS builds where the
+        // corresponding private Dusklight UI symbols are not exported.
+        svc_log->warn(mod_ctx, "Native facial tuner unavailable on this macOS build; continuing without it.");
+#else
         if (error) {
             error->code = result;
             std::snprintf(error->message, sizeof(error->message), "Native facial tuner unavailable");
         }
         mod_shutdown(nullptr);
         return result;
+#endif
     }
 
     result = twilight_visuals::load_acceleration::install_hooks();

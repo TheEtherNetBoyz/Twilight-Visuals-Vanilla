@@ -1,15 +1,12 @@
 #include "settings.hpp"
 #include "native_face_tuner.hpp"
 #include "hotkeys.hpp"
+#include "service_refs.hpp"
 
 #include "mods/service.hpp"
 #include "mods/svc/ui.h"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
-
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
 
 #include <algorithm>
 #include <array>
@@ -195,12 +192,11 @@ std::string current_area_brightness_key() {
 }
 
 std::filesystem::path area_brightness_path() {
-    std::array<wchar_t, 32768> appData{};
-    const DWORD length = GetEnvironmentVariableW(
-        L"APPDATA", appData.data(), static_cast<DWORD>(appData.size()));
-    if (length == 0 || length >= appData.size()) return {};
-    return std::filesystem::path(appData.data()) / L"TwilitRealm" / L"Dusklight" /
-           L"twilight_visuals_area_brightness.cfg";
+    const char* data_directory = nullptr;
+    if (svc_host == nullptr || svc_host->data_dir == nullptr ||
+        svc_host->data_dir(mod_ctx, &data_directory) != MOD_OK || data_directory == nullptr)
+        return {};
+    return std::filesystem::path(data_directory) / "twilight_visuals_area_brightness.cfg";
 }
 
 void load_area_brightness() {

@@ -38,15 +38,43 @@ add_mod(twilight_visuals
             src/native_face_tuner.cpp
             src/load_acceleration.cpp
             src/hotkeys.cpp
+            src/platform.cpp
         MOD_JSON mod.json
         RES_DIR res
         BUNDLE
 )
 
+set(DUSKLIGHT_BUILD_DIR "" CACHE PATH
+    "Dusklight build directory containing generated dependency headers")
+
+if (NOT DUSKLIGHT_BUILD_DIR)
+    if (WIN32)
+        set(DUSKLIGHT_BUILD_DIR "${DUSKLIGHT_DIR}/build/windows-msvc" CACHE PATH
+            "Dusklight build directory containing generated dependency headers" FORCE)
+    elseif (APPLE)
+        set(DUSKLIGHT_BUILD_DIR "${DUSKLIGHT_DIR}/build/macos-default-relwithdebinfo" CACHE PATH
+            "Dusklight build directory containing generated dependency headers" FORCE)
+    else ()
+        set(DUSKLIGHT_BUILD_DIR "${DUSKLIGHT_DIR}/build/linux-default-relwithdebinfo" CACHE PATH
+            "Dusklight build directory containing generated dependency headers" FORCE)
+    endif ()
+endif ()
+
+if (WIN32)
+    set(_twilight_visuals_sdl_include_dir
+        "${DUSKLIGHT_BUILD_DIR}/_deps/sdl3_prebuilt-src/include")
+elseif (APPLE)
+    set(_twilight_visuals_sdl_include_dir
+        "${DUSKLIGHT_BUILD_DIR}/_deps/sdl-src/include")
+else ()
+    set(_twilight_visuals_sdl_include_dir
+        "${DUSKLIGHT_BUILD_DIR}/_deps/sdl-src/include")
+endif ()
+
 target_include_directories(twilight_visuals PRIVATE
     "${DUSKLIGHT_DIR}/src"
-    "${DUSKLIGHT_DIR}/build/windows-msvc/_deps/rmlui-src/Include"
-    "${DUSKLIGHT_DIR}/build/windows-msvc/_deps/sdl3_prebuilt-src/include")
+    "${DUSKLIGHT_BUILD_DIR}/_deps/rmlui-src/Include"
+    "${_twilight_visuals_sdl_include_dir}")
 
 # The generic Windows SDK import library omits J3DAnmBase's virtual destructor.
 # Dusklight itself exports it; this import-only library makes the owned custom
