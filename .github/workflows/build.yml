@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: >-
           cmake -S . -B build-ci -G Ninja
-          -DDUSKLIGHT_VERSION=27fff9c4d0af01c801912dc26f588d2704816e2a
+          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
 
       - name: Configure Dusklight dependencies
         shell: pwsh
@@ -47,7 +47,7 @@ jobs:
         run: >-
           cmake -S . -B build-ci -G Ninja
           -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
-          -DDUSKLIGHT_VERSION=27fff9c4d0af01c801912dc26f588d2704816e2a
+          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
 
       - name: Build mod package
         shell: pwsh

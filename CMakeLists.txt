@@ -3,7 +3,7 @@ project(twilight_visuals_vanilla CXX)
 
 # The Dusklight version to build against: a release tag (e.g. "v1.5.0") or a commit SHA.
 if (NOT DUSKLIGHT_VERSION)
-    set(DUSKLIGHT_VERSION "27fff9c4d0af01c801912dc26f588d2704816e2a")
+    set(DUSKLIGHT_VERSION "edf42c6a7202647b56dd2fcdef02d17671bc814b")
 endif ()
 # Fetches the Dusklight sources into ./dusklight and provides DUSKLIGHT_DIR.
 # Use -DDUSKLIGHT_DIR= to point at an existing Dusklight checkout.
