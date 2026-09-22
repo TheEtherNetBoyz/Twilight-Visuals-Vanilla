@@ -6,9 +6,18 @@
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <string>
 
 IMPORT_SERVICE(ConfigService, svc_config);
 IMPORT_SERVICE(UiService, svc_ui);
@@ -19,7 +28,9 @@ Settings g_settings;
 UiWindowHandle g_settingsWindow{};
 UiWindowHandle g_faceWindow{};
 UiMenuTabHandle g_quickMenuTab{};
-ConfigVarHandle g_areaEditorTarget{};
+ConfigSubscriptionHandle g_areaBrightnessSubscription{};
+std::string g_areaEditorKey;
+std::map<std::string, int64_t> g_areaBrightness;
 
 constexpr std::array<const char*, 4> kStyles{
     "Normal Twilight", "Black and White", "Astral Plane", "The Dark Hour"};
@@ -148,22 +159,84 @@ void add_number(UiElementHandle pane, const char* label, const char* help, Confi
     add_control(pane, control);
 }
 
-ConfigVarHandle current_area_brightness_handle() {
+std::string current_area_brightness_key() {
     const char* stage = dComIfGp_getStartStageName();
-    if (stage == nullptr) return 0;
-    if (std::strcmp(stage, "F_SP108") == 0) return g_settings.faronBrightness;
-    if (std::strcmp(stage, "F_SP116") == 0 || std::strcmp(stage, "R_SP116") == 0 ||
-        std::strcmp(stage, "R_SP160") == 0 || std::strcmp(stage, "R_SP161") == 0 ||
-        std::strcmp(stage, "F_SP121") == 0)
-        return g_settings.castleTownBrightness;
-    if (std::strcmp(stage, "D_MN05") == 0 && dComIfGp_roomControl_getStayNo() == 4)
-        return g_settings.forestTempleExteriorBrightness;
-    return 0;
+    if (stage == nullptr || *stage == '\0') return {};
+    int room = dComIfGp_roomControl_getStayNo();
+    if (room < 0) room = dComIfGp_getStartStageRoomNo();
+    if (room < 0) return {};
+    return std::string(stage) + ":" + std::to_string(room);
+}
+
+std::filesystem::path area_brightness_path() {
+    std::array<wchar_t, 32768> appData{};
+    const DWORD length = GetEnvironmentVariableW(
+        L"APPDATA", appData.data(), static_cast<DWORD>(appData.size()));
+    if (length == 0 || length >= appData.size()) return {};
+    return std::filesystem::path(appData.data()) / L"TwilitRealm" / L"Dusklight" /
+           L"twilight_visuals_area_brightness.cfg";
+}
+
+void load_area_brightness() {
+    g_areaBrightness.clear();
+    const auto path = area_brightness_path();
+    if (path.empty()) return;
+    std::ifstream file(path);
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t equals = line.find('=');
+        if (equals == std::string::npos) continue;
+        const std::string key = line.substr(0, equals);
+        const std::string text = line.substr(equals + 1);
+        char* end = nullptr;
+        const long long value = std::strtoll(text.c_str(), &end, 10);
+        if (end != text.c_str() && *end == '\0')
+            g_areaBrightness[key] = std::clamp<int64_t>(value, 25, 150);
+    }
+}
+
+void save_area_brightness() {
+    const auto path = area_brightness_path();
+    if (path.empty()) return;
+    std::ofstream file(path, std::ios::trunc);
+    if (!file) return;
+    file << "# Twilight Visuals per-area brightness (stage:room=percent)\n";
+    for (const auto& [key, value] : g_areaBrightness) file << key << '=' << value << '\n';
+}
+
+void area_brightness_changed(ModContext*, ConfigVarHandle,
+                             const ConfigVarValue* value, const ConfigVarValue*, void*) {
+    if (value == nullptr || value->type != CONFIG_VAR_INT || g_areaEditorKey.empty()) return;
+    g_areaBrightness[g_areaEditorKey] = std::clamp<int64_t>(value->int_value, 25, 150);
+    save_area_brightness();
 }
 
 void prepare_current_area_brightness_editor() {
-    g_areaEditorTarget = current_area_brightness_handle();
-    const int64_t value = get_int(g_areaEditorTarget, 100);
+    g_areaEditorKey = current_area_brightness_key();
+    const auto it = g_areaBrightness.find(g_areaEditorKey);
+    const int64_t value = it == g_areaBrightness.end() ? 100 : it->second;
+    svc_config->set_int(mod_ctx, g_settings.currentAreaBrightness, value);
+}
+
+void commit_current_area_brightness_editor() {
+    if (g_areaEditorKey.empty()) return;
+    const int64_t value = std::clamp<int64_t>(
+        get_int(g_settings.currentAreaBrightness, 100), 25, 150);
+    g_areaBrightness[g_areaEditorKey] = value;
+    save_area_brightness();
+}
+
+void sync_current_area_brightness_editor() {
+    if (g_settingsWindow == 0) return;
+    const std::string key = current_area_brightness_key();
+    if (key == g_areaEditorKey) return;
+
+    // Preserve edits for the room being left, then make the live menu control
+    // represent the newly loaded stage/room instead of retaining stale text.
+    commit_current_area_brightness_editor();
+    g_areaEditorKey = key;
+    const auto it = g_areaBrightness.find(key);
+    const int64_t value = it == g_areaBrightness.end() ? 100 : it->second;
     svc_config->set_int(mod_ctx, g_settings.currentAreaBrightness, value);
 }
 
@@ -186,7 +259,8 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Apply the separately saved brightness percentage for the loaded area.",
         g_settings.perAreaBrightness);
     add_number(left, "Current Area Brightness",
-        "Adjust the loaded area's brightness. Its value is saved separately when supported.",
+        "Adjust the loaded stage and room. The displayed value follows room changes and is "
+        "saved in the separate per-area brightness file.",
         g_settings.currentAreaBrightness, 25, 150, 5, "%");
     add_number(left, "Astral Chromatic Aberration",
         "Adjust Astral Plane red/blue edge separation.", g_settings.chromaticAberration, 0, 200,
@@ -257,7 +331,11 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     return MOD_OK;
 }
 
-void settings_window_closed(ModContext*, UiWindowHandle, void*) { g_settingsWindow = 0; }
+void settings_window_closed(ModContext*, UiWindowHandle, void*) {
+    commit_current_area_brightness_editor();
+    g_areaEditorKey.clear();
+    g_settingsWindow = 0;
+}
 
 void open_settings_window(ModContext*, void*) {
     if (g_settingsWindow != 0) return;
@@ -326,16 +404,11 @@ int64_t get_int(ConfigVarHandle handle, int64_t fallback) {
 }
 
 int64_t current_area_brightness_percent() {
+    sync_current_area_brightness_editor();
     if (!get_bool(g_settings.perAreaBrightness)) return 100;
-    const ConfigVarHandle current = current_area_brightness_handle();
-    if (current == 0) return 100;
-    if (current == g_areaEditorTarget) {
-        const int64_t edited = std::clamp<int64_t>(
-            get_int(g_settings.currentAreaBrightness, 100), 25, 150);
-        if (edited != get_int(current, 100)) svc_config->set_int(mod_ctx, current, edited);
-        return edited;
-    }
-    return get_int(current, 100);
+    const std::string key = current_area_brightness_key();
+    const auto it = g_areaBrightness.find(key);
+    return it == g_areaBrightness.end() ? 100 : it->second;
 }
 
 ModResult register_settings(ModError*) {
@@ -349,12 +422,9 @@ ModResult register_settings(ModError*) {
     if (result != MOD_OK) return result;
     result = register_int("current-area-brightness", 100, g_settings.currentAreaBrightness);
     if (result != MOD_OK) return result;
-    result = register_int("area-brightness-faron", 100, g_settings.faronBrightness);
-    if (result != MOD_OK) return result;
-    result = register_int("area-brightness-castle-town", 100, g_settings.castleTownBrightness);
-    if (result != MOD_OK) return result;
-    result = register_int("area-brightness-forest-temple-exterior", 100,
-                          g_settings.forestTempleExteriorBrightness);
+    load_area_brightness();
+    result = svc_config->subscribe(mod_ctx, g_settings.currentAreaBrightness,
+        area_brightness_changed, nullptr, &g_areaBrightnessSubscription);
     if (result != MOD_OK) return result;
     result = register_int("chromatic-aberration", 80, g_settings.chromaticAberration);
     if (result != MOD_OK) return result;

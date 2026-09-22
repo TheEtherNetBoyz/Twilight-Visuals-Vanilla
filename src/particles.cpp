@@ -318,6 +318,18 @@ void move_post(ModContext*, void*, void*, void*) {
     boundary::set_native_moon_initialization(false);
     run_trail::move();
     blood::move();
+    // Native weather processing recalculates the sun and lens flare every frame.
+    // Clamp both after that update so Dark Hour can never briefly expose the sun,
+    // including in rooms that retain their own authored sky/weather state.
+    if (dark_hour_moon_active()) {
+        if (g_env_light.mpSunPacket != nullptr)
+            g_env_light.mpSunPacket->mSunAlpha = 0.0f;
+        if (g_env_light.mpSunLenzPacket != nullptr) {
+            g_env_light.mpSunLenzPacket->field_0x90 = 0.0f;
+            g_env_light.mpSunLenzPacket->mDistFalloff = 0.0f;
+            g_env_light.mpSunLenzPacket->mDrawLenzInSky = false;
+        }
+    }
     u8* texture = static_cast<u8*>(dComIfG_getObjectRes("Always", 0x5E));
     if (!enabled() || texture == nullptr) {
         destroy_packet();

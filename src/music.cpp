@@ -7,6 +7,7 @@
 #include "Z2AudioLib/Z2SceneMgr.h"
 #include "Z2AudioLib/Z2StatusMgr.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_kankyo.h"
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_name.h"
 #include "m_Do/m_Do_Reset.h"
@@ -494,8 +495,17 @@ void update_from_manager(Z2SeqMgr* p) {
     const bool enabled = rawEnabled || customOwnership.load(std::memory_order_relaxed);
     const bool resetting = mDoRst::getResetData() != nullptr && mDoRst::isReset();
     const bool transitionCarry = customOwnership.load(std::memory_order_relaxed) && !playerExists;
+    const bool protectedMusic = is_boss_bgm(main) || is_boss_bgm(sub) ||
+                                fanfare(main) || fanfare(sub);
+    // Some overworld scenes reserve/start a native stream when the clock enters
+    // night. Dark Hour owns ambient music in ordinary gameplay, so that native
+    // nighttime stream must not evict it. Cutscenes, resets, fanfares, and boss
+    // music retain the normal safety gate.
+    const bool darkHourNight = runtime_settings().style == Style::DarkHour &&
+                               dKy_daynight_check() && demo == 0 && !protectedMusic;
+    const bool streamSafe = p->getStreamBgmID() == 0xffffffffu || darkHourNight;
     const bool safe = transitionCarry || ((demo == 0 || demo == 1) &&
-                      p->getStreamBgmID() == 0xffffffffu && !resetting);
+                      streamSafe && !resetting);
     const bool scope = enabled && safe &&
         (ordinary || !p->mFlags.mBattleBgmOff) &&
         (sub == 0xffffffffu || ordinary);

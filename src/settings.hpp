@@ -10,9 +10,6 @@ struct Settings {
     ConfigVarHandle brightness{};
     ConfigVarHandle perAreaBrightness{};
     ConfigVarHandle currentAreaBrightness{};
-    ConfigVarHandle faronBrightness{};
-    ConfigVarHandle castleTownBrightness{};
-    ConfigVarHandle forestTempleExteriorBrightness{};
     ConfigVarHandle chromaticAberration{};
     ConfigVarHandle skybox{};
     ConfigVarHandle weather{};

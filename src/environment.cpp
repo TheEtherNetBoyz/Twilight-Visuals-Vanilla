@@ -746,12 +746,12 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
     apply_distance_fog(*fog, *fogNear, *fogFar);
     const float factor = brightness();
     for (int i = 0; i < 4; ++i) {
-        scale_color(colors[i], factor);
         tint_dark_hour_background_color(colors[i]);
+        scale_color(colors[i], factor);
     }
     for (int i = 0; i < 6; ++i) {
-        scale_light(tev->mLights[i], factor);
         tint_dark_hour_background_light(tev->mLights[i]);
+        scale_light(tev->mLights[i], factor);
         tint_astral_light(tev->mLights[i], i == 1 || i == 4);
     }
     apply_indoor_window_accent(*tev);

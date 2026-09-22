@@ -28,6 +28,8 @@ static unsigned s_visual_environment_depth = 0;
 static bool s_visual_moon_position_saved = false;
 static cXyz s_visual_moon_position{};
 static bool s_native_moon_initialization = false;
+static bool s_midnight_lighting_time_saved = false;
+static f32 s_midnight_lighting_real_time = 0.0f;
 
 struct BackgroundLightState {
     dKy_tevstr_c* tev{};
@@ -38,6 +40,7 @@ struct BackgroundLightState {
 static BackgroundLightState s_backgroundLightState;
 
 DEFINE_HOOK(&dScnKy_env_light_c::exeKankyo, EnvironmentExecute);
+DEFINE_HOOK(&dScnKy_env_light_c::setDaytime, EnvironmentSetDaytime);
 DEFINE_HOOK(&dKy_darkworld_check, NativeDarkworldCheck);
 DEFINE_HOOK_SYMBOL("d/d_kankyo.cpp#envcolor_init", void(), EnvironmentColorInit);
 DEFINE_HOOK(&dScnKy_env_light_c::settingTevStruct, SettingTevStruct);
@@ -155,8 +158,25 @@ void commit() {
 }
 
 HookAction environment_execute_pre(ModContext*, void*, void*, void*) {
+    // Keep the visual clock pinned through the draw phase as well as exeKankyo.
+    // Restore the last real sample only after Dark Hour is no longer active.
+    if (s_midnight_lighting_time_saved && !dark_hour_moon_lighting_active()) {
+        g_env_light.daytime = s_midnight_lighting_real_time;
+        s_midnight_lighting_time_saved = false;
+    }
     update();
     return HOOK_CONTINUE;
+}
+
+void environment_set_daytime_post(ModContext*, void*, void*, void*) {
+    if (!dark_hour_moon_lighting_active()) return;
+
+    // setDaytime has already advanced and persisted the real game clock and
+    // notified audio. From this point through the later draw/TEV passes, expose
+    // a stable midnight sample through the environment's visual clock only.
+    s_midnight_lighting_real_time = g_env_light.daytime;
+    s_midnight_lighting_time_saved = true;
+    g_env_light.daytime = 0.0f;
 }
 
 void environment_execute_post(ModContext*, void*, void*, void*) {}
@@ -275,6 +295,7 @@ void initialize() {
     mods::hook::add_post<EnvironmentColorInit>(environment_color_init_post);
     mods::hook::add_pre<EnvironmentExecute>(environment_execute_pre);
     mods::hook::add_post<EnvironmentExecute>(environment_execute_post);
+    mods::hook::add_post<EnvironmentSetDaytime>(environment_set_daytime_post);
     mods::hook::add_pre<NativeDarkworldCheck>(native_darkworld_check_pre);
     mods::hook::add_pre<SettingTevStruct>(visual_effect_pre);
     mods::hook::add_post<SettingTevStruct>(visual_effect_post);
@@ -324,6 +345,10 @@ void shutdown() {
     s_visual_environment_area_initialized = false;
     s_visual_environment_depth = 0;
     s_native_moon_initialization = false;
+    if (s_midnight_lighting_time_saved)
+        g_env_light.daytime = s_midnight_lighting_real_time;
+    s_midnight_lighting_time_saved = false;
+    mods::hook::uninstall<EnvironmentSetDaytime>();
     mods::hook::uninstall<TwilightCameraLightSet>();
     mods::hook::uninstall<SunMoonLightCheck>();
     mods::hook::uninstall<SwordFlushSet>();
