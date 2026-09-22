@@ -61,7 +61,11 @@ jobs:
           if-no-files-found: error
 
   build-macos:
-    runs-on: macos-14
+    # macos-14 selects Xcode 15.4, whose libc++ does not provide std::jthread.
+    # Aurora requires std::jthread, so use the ARM64 macOS 15 image with Xcode 16.4.
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
 
     steps:
       - name: Check out mod source
@@ -73,13 +77,19 @@ jobs:
       - name: Set up Ninja
         run: brew install ninja
 
+      - name: Verify Apple C++20 toolchain
+        run: |
+          xcodebuild -version
+          clang++ --version
+          printf '%s\n' '#include <thread>' 'static_assert(__cpp_lib_jthread >= 201911L);' 'int main() {}' | clang++ -std=c++20 -fexperimental-library -D_LIBCPP_ENABLE_EXPERIMENTAL -fsyntax-only -x c++ -
+
       - name: Fetch Dusklight source
         run: >-
           cmake -S . -B build-fetch-macos -G Ninja
           -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
 
       - name: Configure Dusklight host
-        # Xcode 15's libc++ gates jthread behind experimental-library support. Aurora's
+        # Keep the libc++ compatibility flags for older supported toolchains. Aurora's
         # system_info.cpp also relies on TargetConditionals macros without including
         # TargetConditionals.h itself, so force-include the SDK header for this build.
         run: >-
