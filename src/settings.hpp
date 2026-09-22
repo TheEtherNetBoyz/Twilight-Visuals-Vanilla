@@ -28,6 +28,11 @@ struct Settings {
     ConfigVarHandle faceOverride{};
     ConfigVarHandle faceExpression{};
     ConfigVarHandle loadMode{};
+    ConfigVarHandle hotkeyGyro{};
+    ConfigVarHandle hotkeyBloom{};
+    ConfigVarHandle hotkeyTextures{};
+    ConfigVarHandle hotkeyGyroEnabled{};
+    ConfigVarHandle hotkeyTexturesEnabled{};
 };
 
 Settings& settings();

@@ -1,5 +1,6 @@
 #include "settings.hpp"
 #include "native_face_tuner.hpp"
+#include "hotkeys.hpp"
 
 #include "mods/service.hpp"
 #include "mods/svc/ui.h"
@@ -118,6 +119,31 @@ void add_button(UiElementHandle pane, const char* label, const char* help,
     control.help_rml = help;
     control.on_pressed = onPressed;
     add_control(pane, control);
+}
+
+struct HotkeyButtonContext {
+    hotkeys::Action action;
+    UiElementHandle control{};
+    std::string label;
+};
+
+std::array<HotkeyButtonContext, 3> g_hotkeyButtons{{
+    {hotkeys::Action::Gyro}, {hotkeys::Action::Bloom}, {hotkeys::Action::Textures}}};
+
+void begin_hotkey_binding(ModContext*, void* userData) {
+    auto* context = static_cast<HotkeyButtonContext*>(userData);
+    if (context != nullptr) hotkeys::begin_binding(context->action, context->control);
+}
+
+void add_hotkey_button(UiElementHandle pane, HotkeyButtonContext& context, const char* help) {
+    context.label = hotkeys::binding_label(context.action);
+    UiControlDesc control = UI_CONTROL_DESC_INIT;
+    control.kind = UI_CONTROL_BUTTON;
+    control.label = context.label.c_str();
+    control.help_rml = help;
+    control.on_pressed = begin_hotkey_binding;
+    control.user_data = &context;
+    svc_ui->pane_add_control(mod_ctx, pane, &control, &context.control);
 }
 
 void add_toggle(UiElementHandle pane, const char* label, const char* help, ConfigVarHandle var) {
@@ -328,6 +354,14 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Open the bottom-screen facial-expression tuner. It includes Automatic plus every "
         "vanilla human and wolf daAlink_FTANM expression.",
         open_face_tuner);
+
+    svc_ui->pane_add_section(mod_ctx, left, "Hotkeys");
+    add_hotkey_button(left, g_hotkeyButtons[0],
+        "Select, release the activating input, then press any keyboard key or controller button.");
+    add_hotkey_button(left, g_hotkeyButtons[1],
+        "Select, release the activating input, then press any keyboard key or controller button.");
+    add_hotkey_button(left, g_hotkeyButtons[2],
+        "Select, release the activating input, then press any keyboard key or controller button.");
     return MOD_OK;
 }
 
@@ -461,6 +495,16 @@ ModResult register_settings(ModError*) {
     result = register_int("face-expression", 0, g_settings.faceExpression);
     if (result != MOD_OK) return result;
     result = register_int("load-mode", 0, g_settings.loadMode);
+    if (result != MOD_OK) return result;
+    result = register_int("hotkey-gyro-captured-v3", 0, g_settings.hotkeyGyro);
+    if (result != MOD_OK) return result;
+    result = register_int("hotkey-bloom-captured-v3", 0, g_settings.hotkeyBloom);
+    if (result != MOD_OK) return result;
+    result = register_int("hotkey-textures-captured-v3", 0, g_settings.hotkeyTextures);
+    if (result != MOD_OK) return result;
+    result = register_bool("hotkey-gyro-enabled", true, g_settings.hotkeyGyroEnabled);
+    if (result != MOD_OK) return result;
+    result = register_bool("hotkey-textures-enabled", true, g_settings.hotkeyTexturesEnabled);
     if (result != MOD_OK) return result;
     return register_bool("exclude-palace-of-twilight", true,
                          g_settings.excludePalaceOfTwilight);

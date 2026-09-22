@@ -16,6 +16,7 @@
 #include "facial.hpp"
 #include "native_face_tuner.hpp"
 #include "load_acceleration.hpp"
+#include "hotkeys.hpp"
 #include <cstdio>
 
 #include "mods/service.hpp"
@@ -51,6 +52,8 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (result != MOD_OK) return result;
 
     twilight_visuals::refresh_runtime_settings();
+
+    twilight_visuals::hotkeys::initialize();
 
     twilight_visuals::geometry::initialize();
     twilight_visuals::boundary::initialize();
@@ -166,10 +169,12 @@ MOD_EXPORT ModResult mod_update(ModError*) {
     twilight_visuals::facial::update();
     twilight_visuals::music::update();
     twilight_visuals::load_acceleration::update();
+    twilight_visuals::hotkeys::update();
     return MOD_OK;
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    twilight_visuals::hotkeys::shutdown();
     twilight_visuals::load_acceleration::uninstall_hooks();
     twilight_visuals::native_face_tuner::shutdown();
     twilight_visuals::facial::shutdown();

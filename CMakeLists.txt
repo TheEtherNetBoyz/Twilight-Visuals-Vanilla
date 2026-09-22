@@ -37,6 +37,7 @@ add_mod(twilight_visuals
             src/facial.cpp
             src/native_face_tuner.cpp
             src/load_acceleration.cpp
+            src/hotkeys.cpp
         MOD_JSON mod.json
         RES_DIR res
         BUNDLE
