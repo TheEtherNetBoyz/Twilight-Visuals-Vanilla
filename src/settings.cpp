@@ -353,11 +353,11 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
 
     svc_ui->pane_add_section(mod_ctx, left, "Hotkeys");
     add_hotkey_button(left, g_hotkeyButtons[0],
-        "Select, release the activating input, then press any keyboard key or controller button.");
+        "Select, release the activating input, then press any keyboard key or controller button. Press Escape to clear the binding.");
     add_hotkey_button(left, g_hotkeyButtons[1],
-        "Select, release the activating input, then press any keyboard key or controller button.");
+        "Select, release the activating input, then press any keyboard key or controller button. Press Escape to clear the binding.");
     add_hotkey_button(left, g_hotkeyButtons[2],
-        "Select, release the activating input, then press any keyboard key or controller button.");
+        "Select, release the activating input, then press any keyboard key or controller button. Press Escape to clear the binding.");
     return MOD_OK;
 }
 

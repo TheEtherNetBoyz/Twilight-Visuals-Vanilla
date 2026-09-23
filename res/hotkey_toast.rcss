@@ -1,0 +1,26 @@
+/* Compact bottom-center confirmation for Twilight Visuals hotkey actions. */
+toast.twilight-hotkey {
+    top: auto;
+    right: auto;
+    bottom: 34dp;
+    left: 50%;
+    max-width: 80%;
+    padding: 10dp 18dp 12dp;
+    gap: 3dp;
+    transform: translateX(-50%) scale(0.9);
+}
+
+toast.twilight-hotkey[open] {
+    transform: translateX(-50%) scale(1);
+}
+
+toast.twilight-hotkey heading {
+    font-size: var(--font-size-lg);
+    line-height: 1.1;
+}
+
+toast.twilight-hotkey message {
+    align-items: center;
+    text-align: center;
+    font-size: var(--font-size-md);
+}

@@ -51,6 +51,8 @@ DEFINE_HOOK_SYMBOL("aurora::gfx::texture_replacement::find_pointer_replacement",
 DEFINE_HOOK_SYMBOL("aurora::gfx::texture_replacement::find_source_replacement",
     std::optional<Replacement>(GXTexObj_&, aurora::texture::TextureSourceKey&),
     FindSourceReplacement);
+DEFINE_HOOK_SYMBOL("aurora::gx::clear_static_texture_cache", void(),
+    ClearStaticTextureCache);
 
 std::array<bool, 3> s_keyboardWasDown{};
 std::vector<SDL_JoystickID> s_gamepads;
@@ -68,6 +70,8 @@ decltype(&SDL_free) s_sdlFree = nullptr;
 bool s_gyroHook = false;
 bool s_pointerHook = false;
 bool s_sourceHook = false;
+bool s_textureCacheHook = false;
+UiStyleHandle s_hotkeyToastStyle = 0;
 
 constexpr int64_t kControllerButtonBase = 1000;
 constexpr int64_t kControllerAxisBase = 2000;
@@ -232,6 +236,24 @@ void update_capture() {
     }
     if (input == 0 || !s_capturing.has_value()) return;
     const Action action = *s_capturing;
+
+    if (input == static_cast<int64_t>(SDL_SCANCODE_ESCAPE) + 1) {
+        svc_config->set_int(mod_ctx, binding_var(action), 0);
+        const std::string label = std::string(action_name(action)) + ": Unbound";
+        if (s_captureControl != 0)
+            svc_ui->control_set_label(mod_ctx, s_captureControl, label.c_str());
+        UiToastDesc toast = UI_TOAST_DESC_INIT;
+        const std::string body = std::string(action_name(action)) + " hotkey unbound.";
+        toast.title_rml = "Hotkey cleared";
+        toast.body_rml = body.c_str();
+        toast.duration_ms = 2500;
+        svc_ui->push_toast(mod_ctx, &toast);
+        s_capturing.reset();
+        s_captureControl = 0;
+        s_keyboardWasDown = {};
+        return;
+    }
+
     svc_config->set_int(mod_ctx, binding_var(action), input);
     const std::string name = value_name(input);
     const std::string label = std::string(action_name(action)) + ": " + name;
@@ -247,6 +269,37 @@ void update_capture() {
     s_keyboardWasDown = {};
 }
 
+void show_activation(Action action, const std::string& state) {
+    if (svc_ui == nullptr || !SERVICE_HAS(svc_ui, UiService, push_toast)) return;
+
+    UiToastDesc toast = UI_TOAST_DESC_INIT;
+    const std::string title = action_name(action);
+    toast.type = "twilight-hotkey";
+    toast.title_rml = title.c_str();
+    toast.body_rml = state.c_str();
+    toast.duration_ms = 1800;
+    svc_ui->push_toast(mod_ctx, &toast);
+}
+
+const char* bloom_mode_name(int64_t mode) {
+    switch (mode) {
+    case 0: return "Native Dusklight";
+    case 1: return "Off";
+    case 2: return "Classic (MFB)";
+    case 3: return "Dusklight";
+    default: return "Unknown";
+    }
+}
+
+void invalidate_texture_caches() {
+    // GXInvalidateTexAll is intentionally a no-op in Aurora. The existing Aurora
+    // cache-clear entry point is the mod-safe way to force the next draw to run
+    // through the replacement lookup again.
+    GXInvalidateTexAll();
+    if (s_textureCacheHook && ClearStaticTextureCache::g_orig != nullptr)
+        ClearStaticTextureCache::g_orig();
+}
+
 HookAction gyro_pre(ModContext*, void*, void* retval, void*) {
     if (retval == nullptr) return HOOK_CONTINUE;
     *static_cast<bool*>(retval) = get_bool(settings().hotkeyGyroEnabled, true) &&
@@ -254,13 +307,22 @@ HookAction gyro_pre(ModContext*, void*, void* retval, void*) {
     return HOOK_SKIP_ORIGINAL;
 }
 
-void filter_pointer_post(ModContext*, void*, void* retval, void*) {
-    if (!get_bool(settings().hotkeyTexturesEnabled, true) && retval != nullptr)
-        static_cast<std::optional<Replacement>*>(retval)->reset();
+HookAction texture_cache_clear_pre(ModContext*, void*, void*, void*) {
+    return HOOK_CONTINUE;
 }
 
-void filter_source_post(ModContext*, void*, void* retval, void*) {
-    filter_pointer_post(nullptr, nullptr, retval, nullptr);
+HookAction filter_replacement_pre(ModContext*, void*, void* retval, void*) {
+    if (get_bool(settings().hotkeyTexturesEnabled, true)) return HOOK_CONTINUE;
+    if (retval != nullptr) static_cast<std::optional<Replacement>*>(retval)->reset();
+    return HOOK_SKIP_ORIGINAL;
+}
+
+HookAction filter_pointer_pre(ModContext* ctx, void* args, void* retval, void* userData) {
+    return filter_replacement_pre(ctx, args, retval, userData);
+}
+
+HookAction filter_source_pre(ModContext* ctx, void* args, void* retval, void* userData) {
+    return filter_replacement_pre(ctx, args, retval, userData);
 }
 }  // namespace
 
@@ -273,11 +335,22 @@ ModResult initialize() {
         s_getGamepadButton == nullptr || s_getGamepadAxis == nullptr)
         svc_log->warn(mod_ctx, "Controller hotkeys unavailable: SDL gamepad API was not found.");
     s_gyroHook = mods::hook::add_pre<GyroAimContext>(gyro_pre) == MOD_OK;
-    s_pointerHook = mods::hook::add_post<FindPointerReplacement>(filter_pointer_post) == MOD_OK;
-    s_sourceHook = mods::hook::add_post<FindSourceReplacement>(filter_source_post) == MOD_OK;
+    s_pointerHook = mods::hook::add_pre<FindPointerReplacement>(filter_pointer_pre) == MOD_OK;
+    s_sourceHook = mods::hook::add_pre<FindSourceReplacement>(filter_source_pre) == MOD_OK;
+    s_textureCacheHook = mods::hook::add_pre<ClearStaticTextureCache>(texture_cache_clear_pre) == MOD_OK;
+    if (SERVICE_HAS(svc_ui, UiService, register_styles_file)) {
+        const ModResult styleResult = svc_ui->register_styles_file(
+            mod_ctx, UI_SCOPE_OVERLAY, "hotkey_toast.rcss", &s_hotkeyToastStyle);
+        if (styleResult != MOD_OK)
+            svc_log->warn(mod_ctx, "Hotkey popup style could not be registered.");
+    }
     if (!s_gyroHook) svc_log->warn(mod_ctx, "Gyro hotkey hook unavailable on this Dusklight build.");
     if (!s_pointerHook || !s_sourceHook)
         svc_log->warn(mod_ctx, "Texture replacement hotkey hook unavailable on this Dusklight build.");
+    if (s_pointerHook || s_sourceHook)
+        svc_log->info(mod_ctx, "Texture replacement hotkey compatibility hook active.");
+    if (!s_textureCacheHook)
+        svc_log->warn(mod_ctx, "Texture cache clear hook unavailable; texture toggles may need a room reload.");
     return MOD_OK;
 }
 
@@ -286,7 +359,8 @@ void begin_binding(Action action, UiElementHandle control) {
     s_captureControl = control;
     s_waitingForRelease = true;
     if (control != 0)
-        svc_ui->control_set_label(mod_ctx, control, "Release, then press any key/button...");
+        svc_ui->control_set_label(mod_ctx, control,
+            "Release, then press a key/button (Esc clears)...");
 }
 
 std::string binding_label(Action action) {
@@ -306,27 +380,35 @@ void update() {
     if (pressed(Action::Gyro, 0) && s_gyroHook) {
         const bool next = !get_bool(settings().hotkeyGyroEnabled, true);
         svc_config->set_bool(mod_ctx, settings().hotkeyGyroEnabled, next);
+        const std::string state = next ? "On" : "Off";
+        show_activation(Action::Gyro, state);
         svc_log->info(mod_ctx, next ? "Gyro Aim hotkey: On" : "Gyro Aim hotkey: Off");
     }
     if (pressed(Action::Bloom, 1)) {
         const int64_t next = (get_int(settings().bloomMode, 0) + 1) % 4;
         svc_config->set_int(mod_ctx, settings().bloomMode, next);
+        show_activation(Action::Bloom, bloom_mode_name(next));
         svc_log->info(mod_ctx, "Bloom mode cycled by hotkey.");
     }
-    if (pressed(Action::Textures, 2) && s_pointerHook && s_sourceHook) {
+    if (pressed(Action::Textures, 2)) {
         const bool next = !get_bool(settings().hotkeyTexturesEnabled, true);
         svc_config->set_bool(mod_ctx, settings().hotkeyTexturesEnabled, next);
-        GXInvalidateTexAll();
+        invalidate_texture_caches();
+        show_activation(Action::Textures, next ? "On" : "Off");
         svc_log->info(mod_ctx,
             next ? "Texture replacements hotkey: On" : "Texture replacements hotkey: Off");
     }
 }
 
 void shutdown() {
+    if (s_hotkeyToastStyle != 0 && SERVICE_HAS(svc_ui, UiService, unregister_styles))
+        svc_ui->unregister_styles(mod_ctx, s_hotkeyToastStyle);
+    s_hotkeyToastStyle = 0;
     if (s_sourceHook) mods::hook::uninstall<FindSourceReplacement>();
     if (s_pointerHook) mods::hook::uninstall<FindPointerReplacement>();
+    if (s_textureCacheHook) mods::hook::uninstall<ClearStaticTextureCache>();
     if (s_gyroHook) mods::hook::uninstall<GyroAimContext>();
-    s_sourceHook = s_pointerHook = s_gyroHook = false;
+    s_sourceHook = s_pointerHook = s_gyroHook = s_textureCacheHook = false;
     s_keyboardWasDown = {};
     s_gamepads.clear();
     s_capturing.reset();
