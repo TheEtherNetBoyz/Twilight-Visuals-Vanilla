@@ -126,7 +126,7 @@ void rebuild_room_layout(const char* stage, int room, const cXyz& playerPosition
 class IndoorLightRayPacket final : public J3DPacket {
 public:
     void draw() override {
-        if (!active() || !environment::dark_hour_indoor()) return;
+        if (!visual_effects_active() || !environment::dark_hour_indoor()) return;
         auto* player = dComIfGp_getLinkPlayer();
         auto* camera = static_cast<camera_process_class*>(dComIfGp_getCamera(0));
         if (player == nullptr || camera == nullptr || dComIfGd_getView() == nullptr) return;
@@ -191,7 +191,7 @@ IndoorLightRayPacket s_packet;
 }  // namespace
 
 void draw() {
-    if (!active() || !environment::dark_hour_indoor()) {
+    if (!visual_effects_active() || !environment::dark_hour_indoor()) {
         s_wasIndoor = false;
         return;
     }

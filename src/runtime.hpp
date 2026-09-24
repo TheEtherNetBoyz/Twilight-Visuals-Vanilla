@@ -20,7 +20,7 @@ enum class MenuScaling : std::int64_t {
 };
 enum class LoadMode : std::int64_t { Normal = 0, Fast = 1 };
 struct RuntimeSettings {
-    bool enabled{}; Style style{Style::Normal}; float brightness{1.0f};
+    bool enabled{}; bool visualEffects{true}; Style style{Style::Normal}; float brightness{1.0f};
     int chromaticAberration{80}; Skybox skybox{Skybox::TwilightDay};
     Weather weather{Weather::Current}; float musicVolume{1.0f};
     BloomMode bloomMode{BloomMode::Native}; float bloomBrightness{1.0f};
@@ -48,5 +48,6 @@ bool provide_grass(bool* monochrome);
 bool palace_excluded();
 bool music_override_allowed();
 bool active();
+bool visual_effects_active();
 void set_speedrun_suppressed(bool suppressed);
 }  // namespace twilight_visuals

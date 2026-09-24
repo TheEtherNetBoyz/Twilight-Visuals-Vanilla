@@ -14,7 +14,7 @@
 namespace twilight_visuals::blood {
 namespace {
 bool blood_puddles_enabled() {
-    return active() && (runtime_settings().style == Style::DarkHour ||
+    return visual_effects_active() && (runtime_settings().style == Style::DarkHour ||
                         runtime_settings().weather == Weather::BloodRain);
 }
 struct DarkHourBloodMark {

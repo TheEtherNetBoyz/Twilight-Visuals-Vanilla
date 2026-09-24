@@ -25,7 +25,7 @@ void speedrun_restore_post(ModContext*, void*, void*, void*) { set_speedrun_supp
 
 void evil_fog_draw_post(ModContext*, void*, void*, void*) {
     const char* stage = dComIfGp_getStartStageName();
-    if (!active() || runtime_settings().style != Style::DarkHour || palace_excluded() ||
+    if (!visual_effects_active() || runtime_settings().style != Style::DarkHour || palace_excluded() ||
         stage == nullptr || std::strcmp(stage, "D_MN08") != 0)
     {
         return;

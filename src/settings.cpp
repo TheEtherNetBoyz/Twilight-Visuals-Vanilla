@@ -269,6 +269,10 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     add_toggle(left, "Enable Twilight Visuals",
         "Apply Twilight visuals, particles, enemy variants, and the selected style anywhere.",
         g_settings.enabled);
+    add_toggle(left, "Enable Visual Style & Music",
+        "Enable the selected visual style's lighting, tint, bloom, sky, particles, visual post-processing, "
+        "and custom music. The master mod toggle and non-visual features remain independent.",
+        g_settings.visualEffects);
     add_select(left, "Visual Style & Music",
         "Select the complete environment style and its matching music. Normal Twilight and Black "
         "and White use Palace music; Astral Plane and The Dark Hour use their matching tracks.",
@@ -443,6 +447,8 @@ int64_t current_area_brightness_percent() {
 
 ModResult register_settings(ModError*) {
     ModResult result = register_bool("twilight-visuals", false, g_settings.enabled);
+    if (result != MOD_OK) return result;
+    result = register_bool("visual-effects", true, g_settings.visualEffects);
     if (result != MOD_OK) return result;
     result = register_int("visual-style", 0, g_settings.style);
     if (result != MOD_OK) return result;

@@ -139,7 +139,7 @@ void draw_blood_rain() {
 }
 
 HookAction rain_draw_pre(ModContext*, void*, void*, void*) {
-    if (!active() || runtime_settings().weather != Weather::BloodRain) return HOOK_CONTINUE;
+    if (!visual_effects_active() || runtime_settings().weather != Weather::BloodRain) return HOOK_CONTINUE;
     draw_blood_rain();
     return HOOK_SKIP_ORIGINAL;
 }
@@ -175,7 +175,7 @@ u8 g_nativeType{};
 
 bool dark_hour_moon_active() {
     const char* stage = dComIfGp_getStartStageName();
-    return active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
+    return visual_effects_active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
            stage != nullptr && *stage != '\0';
 }
 
@@ -257,7 +257,7 @@ void force_dark_hour_moon_room() {
 }
 
 bool native_visual_context() {
-    if (!active() || palace_excluded()) return false;
+    if (!visual_effects_active() || palace_excluded()) return false;
     // MFB forces the shared sun/moon packet to exist before reporting visual
     // Twilight to the weather code. Vanilla has no ForceMoon callback, so let
     // it create that packet normally on the first weather tick, then expose
@@ -281,7 +281,7 @@ HookAction move_pre(ModContext*, void*, void*, void*) {
     boundary::set_native_moon_initialization(dark_hour_moon_active());
     force_dark_hour_moon_room();
     initialize_dark_hour_moon_packet();
-    if (active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
+    if (visual_effects_active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
         !g_env_light.mSunInitialized) {
         g_savedDarkHourVrbox = g_env_light.hide_vrbox;
         g_env_light.hide_vrbox = false;
@@ -289,7 +289,7 @@ HookAction move_pre(ModContext*, void*, void*, void*) {
     }
     g_moveVisualScope = native_visual_context();
     if (g_moveVisualScope) boundary::begin_visual_environment();
-    if (active()) {
+    if (visual_effects_active()) {
         if (!g_savedNativeState) {
             g_nativeCount = g_env_light.mHousiCount;
             g_nativeType = g_env_light.field_0xea9;
@@ -303,7 +303,7 @@ HookAction move_pre(ModContext*, void*, void*, void*) {
 
 bool enabled() {
     const auto& cfg = runtime_settings();
-    return active() && cfg.style != Style::DarkHour;
+    return visual_effects_active() && cfg.style != Style::DarkHour;
 }
 
 void destroy_packet() {
@@ -378,7 +378,7 @@ void move_post(ModContext*, void*, void*, void*) {
 HookAction draw_pre(ModContext*, void*, void*, void*) {
     g_drawVisualScope = native_visual_context();
     if (g_drawVisualScope) boundary::begin_visual_environment();
-    const bool darkHour = active() && runtime_settings().style == Style::DarkHour;
+    const bool darkHour = visual_effects_active() && runtime_settings().style == Style::DarkHour;
     const bool customParticlesReady = g_packet != nullptr && g_packet->mpResTex != nullptr;
     // All visual styles own the Twilight-particle decision while active.  The
     // Dark Hour intentionally draws no housi packet at all, so its native
@@ -400,7 +400,7 @@ HookAction draw_pre(ModContext*, void*, void*, void*) {
 }
 
 HookAction cloud_move_pre(ModContext*, void*, void*, void*) {
-    g_cloudVisualScope = active() && !palace_excluded();
+    g_cloudVisualScope = visual_effects_active() && !palace_excluded();
     if (g_cloudVisualScope) boundary::begin_visual_environment();
     return HOOK_CONTINUE;
 }
@@ -411,7 +411,7 @@ void cloud_move_post(ModContext*, void*, void*, void*) {
 }
 
 HookAction weather_proc_pre(ModContext*, void*, void*, void*) {
-    g_weatherProcVisualScope = active() && !palace_excluded();
+    g_weatherProcVisualScope = visual_effects_active() && !palace_excluded();
     if (g_weatherProcVisualScope) boundary::begin_visual_environment();
     return HOOK_CONTINUE;
 }
@@ -432,7 +432,7 @@ void draw_post(ModContext*, void*, void*, void*) {
         g_env_light.mStarInitialized = g_savedStarInitialized;
         g_nativeStarDrawSuppressed = false;
     }
-    if (active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
+    if (visual_effects_active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
         g_env_light.mSunInitialized && g_env_light.mpSunPacket != nullptr) {
         auto* stageInfo = dComIfGp_getStageStagInfo();
         // If the native stage draw suppresses the packet, queue it once on the

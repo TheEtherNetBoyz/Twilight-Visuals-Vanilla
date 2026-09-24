@@ -44,6 +44,7 @@ const RuntimeSettings& runtime_settings() { return g_runtime; }
 void refresh_runtime_settings() {
     const Settings& config = settings();
     g_runtime.enabled = get_bool(config.enabled);
+    g_runtime.visualEffects = get_bool(config.visualEffects, true);
     g_runtime.style = static_cast<Style>(std::clamp<std::int64_t>(get_int(config.style), 0, 3));
     g_runtime.brightness =
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.brightness, 100), 0, 120)) /
@@ -105,7 +106,7 @@ void refresh_runtime_settings() {
 void provide_visual_state(u8* enabled, u8* style, f32* brightness,
                           s32* chromaticAberration, u8* skyVariant, u8* weather,
                           u8* alternateRun) {
-    if (enabled != nullptr) *enabled = active() ? 1 : 0;
+    if (enabled != nullptr) *enabled = visual_effects_active() ? 1 : 0;
     if (style != nullptr) *style = static_cast<u8>(g_runtime.style);
     if (brightness != nullptr) *brightness = g_runtime.brightness;
     if (chromaticAberration != nullptr) *chromaticAberration = g_runtime.chromaticAberration;
@@ -141,7 +142,7 @@ s16 provide_enemy_proc(s16 procName) {
 
 s32 provide_environment_layer(s32 currentLayer) {
     const char* stage = dComIfGp_getStartStageName();
-    if (!active() || stage == nullptr || palace_excluded()) {
+    if (!visual_effects_active() || stage == nullptr || palace_excluded()) {
         return -1;
     }
     return 14;
@@ -149,7 +150,7 @@ s32 provide_environment_layer(s32 currentLayer) {
 
 u8 provide_bloom_profile(u8 defaultProfile) {
     const char* stage = dComIfGp_getStartStageName();
-    return active() && stage && !palace_excluded() &&
+    return visual_effects_active() && stage && !palace_excluded() &&
         !daPy_py_c::checkNowWolfPowerUp() && g_env_light.field_0x12fc < 0 ? 1 : defaultProfile;
 }
 
@@ -205,13 +206,17 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
 bool provide_grass(bool* monochrome) {
     if (monochrome == nullptr) return false;
     const char* stage = dComIfGp_getStartStageName();
-    *monochrome = active() && g_runtime.style == Style::BlackAndWhite &&
+    *monochrome = visual_effects_active() && g_runtime.style == Style::BlackAndWhite &&
         stage != nullptr && !palace_excluded();
     return true;
 }
 
 bool active() {
     return g_runtime.enabled && !g_speedrunSuppressed;
+}
+
+bool visual_effects_active() {
+    return active() && g_runtime.visualEffects;
 }
 
 bool palace_excluded() {
@@ -221,7 +226,7 @@ bool palace_excluded() {
 }
 
 bool music_override_allowed() {
-    if (!g_musicGameplayReady || !custom_music_allowed()) return false;
+    if (!visual_effects_active() || !g_musicGameplayReady || !custom_music_allowed()) return false;
 
     const char* stage = dComIfGp_getStartStageName();
     if (stage != nullptr && *stage != '\0') {

@@ -211,7 +211,7 @@ u8 scaled_u8(u8 value, f32 scale) {
 
 HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
     auto* bloom = mods::arg<mDoGph_gInf_c::bloom_c*>(args, 0);
-    if (bloom == nullptr || !active()) {
+    if (bloom == nullptr || !visual_effects_active()) {
         return HOOK_CONTINUE;
     }
 
@@ -279,7 +279,7 @@ void restore_bloom_state() {
 void draw_astral_chromatic_aberration() {
     const auto& cfg = runtime_settings();
     const char* stage = dComIfGp_getStartStageName();
-    if (!active() || cfg.style != Style::AstralPlane || stage == nullptr ||
+    if (!visual_effects_active() || cfg.style != Style::AstralPlane || stage == nullptr ||
         std::strncmp(stage, "D_MN08", 6) == 0) return;
     const f32 strength = std::clamp(cfg.chromaticAberration, 0, 200) / 100.0f;
     const u16 width = mDoGph_gInf_c::getWidth();

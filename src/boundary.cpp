@@ -55,7 +55,7 @@ DEFINE_HOOK(&dKy_SunMoon_Light_Check, SunMoonLightCheck);
 DEFINE_HOOK(&dKy_twilight_camelight_set, TwilightCameraLightSet);
 
 static bool dark_hour_moon_lighting_active() {
-    return active() && runtime_settings().style == Style::DarkHour && !palace_excluded();
+    return visual_effects_active() && runtime_settings().style == Style::DarkHour && !palace_excluded();
 }
 
 static bool is_palace_stage() {
@@ -70,7 +70,7 @@ static bool is_palace_stage() {
 // stage names cannot affect title screens or cutscenes.
 static bool dark_hour_visual_effects_active() {
     const char* stage = dComIfGp_getStartStageName();
-    return active() && runtime_settings().style == Style::DarkHour &&
+    return visual_effects_active() && runtime_settings().style == Style::DarkHour &&
            s_visual_environment_depth != 0 &&
            stage != nullptr && dComIfGp_getStage() != nullptr &&
            fopAcM_SearchByName(fpcNm_TITLE_e) == nullptr && !palace_excluded();
@@ -205,7 +205,7 @@ void visual_effect_post(ModContext*, void*, void*, void*) {
 HookAction background_material_light_pre(ModContext*, void* args, void*, void*) {
     begin_visual_environment();
     auto* tev = mods::arg<dKy_tevstr_c*>(args, 2);
-    if (tev == nullptr || !active() || palace_excluded() || is_palace_stage() ||
+    if (tev == nullptr || !visual_effects_active() || palace_excluded() || is_palace_stage() ||
         fopAcM_SearchByName(fpcNm_TITLE_e) != nullptr ||
         runtime_settings().style != Style::DarkHour || tev->Type < 32 || tev->Type > 35)
     {

@@ -49,7 +49,7 @@ float reduced_dark_hour_outdoor_scale() {
 }
 
 bool dark_hour_indoor() {
-    if (!runtime_settings().enabled || runtime_settings().style != Style::DarkHour) return false;
+    if (!visual_effects_active() || runtime_settings().style != Style::DarkHour) return false;
     const char* stageName = dComIfGp_getStartStageName();
     // Palace rooms 0 and 11 are its exterior-like spaces. Its remaining rooms
     // are interiors and should use the same indoor profile as other dungeons.
@@ -125,7 +125,7 @@ bool g_windGustActive{};
 
 bool environment_active() {
     const char* stage = dComIfGp_getStartStageName();
-    return active() && stage != nullptr && !palace_excluded();
+    return visual_effects_active() && stage != nullptr && !palace_excluded();
 }
 
 bool dark_hour_dungeon_indoor() {

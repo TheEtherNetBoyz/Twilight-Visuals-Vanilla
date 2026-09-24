@@ -70,7 +70,7 @@ void celestial_matrix_vector_post(ModContext*, void* args, void*, void*) {
 }
 
 HookAction celestial_draw_pre(ModContext*, void*, void*, void*) {
-    if (!active() || runtime_settings().style != Style::DarkHour || palace_excluded() ||
+    if (!visual_effects_active() || runtime_settings().style != Style::DarkHour || palace_excluded() ||
         g_env_light.mpSunPacket == nullptr) return HOOK_CONTINUE;
     auto* packet = g_env_light.mpSunPacket;
     s_celestialRestore = {true, packet->mMoonAlpha, packet->mSunAlpha,
@@ -176,11 +176,11 @@ bool grass_lighting() {
     return true;
 }
 f32 bloom_gain() {
-    return active() ? std::clamp(runtime_settings().brightness, 0.0f, 1.2f) : 1.0f;
+    return visual_effects_active() ? std::clamp(runtime_settings().brightness, 0.0f, 1.2f) : 1.0f;
 }
 void after_background(void* viewRaw, void* viewportRaw) {
     const char* stage = dComIfGp_getStartStageName();
-    if (!active() || runtime_settings().style != Style::BlackAndWhite ||
+    if (!visual_effects_active() || runtime_settings().style != Style::BlackAndWhite ||
         !stage || std::strcmp(stage, "D_MN08") == 0) return;
     auto* view = static_cast<view_class*>(viewRaw);
     auto* viewport = static_cast<view_port_class*>(viewportRaw);
@@ -193,7 +193,7 @@ void after_background(void* viewRaw, void* viewportRaw) {
     GXSetScissor(viewport->x_orig, viewport->y_orig, viewport->width, viewport->height);
 }
 void* before_model(void* modelRaw, void* lightingRaw) {
-    if (!active() || runtime_settings().style != Style::AstralPlane ||
+    if (!visual_effects_active() || runtime_settings().style != Style::AstralPlane ||
         !modelRaw || !lightingRaw) return nullptr;
     auto* model = static_cast<J3DModelData*>(modelRaw);
     auto* lighting = static_cast<dKy_tevstr_c*>(lightingRaw);
@@ -225,10 +225,10 @@ void after_model(void* token) {
 }
 
 HookAction background_draw_pre(ModContext*, void* args, void*, void*) {
-    s_backgroundVisualScope = active() && !palace_excluded();
+    s_backgroundVisualScope = visual_effects_active() && !palace_excluded();
     if (s_backgroundVisualScope) boundary::begin_visual_environment();
     auto* background = mods::arg<daBg_c*>(args, 0);
-    if (!background || !active() || runtime_settings().style != Style::AstralPlane)
+    if (!background || !visual_effects_active() || runtime_settings().style != Style::AstralPlane)
         return HOOK_CONTINUE;
 
     // MFB applied before_model immediately before each stage-background draw.
@@ -266,7 +266,7 @@ void background_draw_post(ModContext*, void*, void*, void*) {
     s_backgroundVisualScope = false;
 }
 void particle(cXyz* corners, cXyz* position, void* rawColor, u32 j, f32 presentationCounter) {
-    if (!active() || runtime_settings().style != Style::AstralPlane) return;
+    if (!visual_effects_active() || runtime_settings().style != Style::AstralPlane) return;
     auto& color = *static_cast<GXColor*>(rawColor);
     const u32 seed = (j + 1u) * 2654435761u;
     const f32 width = 0.3f + (seed & 255u) / 255.0f;
