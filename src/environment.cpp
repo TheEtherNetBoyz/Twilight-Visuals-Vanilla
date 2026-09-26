@@ -401,6 +401,18 @@ void apply_indoor_window_accent(dKy_tevstr_c& tev) {
     color.b = static_cast<u8>(std::clamp(energy * 0.48f, 0.0f, 255.0f));
 }
 
+void apply_palace_indoor_actor_fill(dKy_tevstr_c& tev) {
+    if (!palace_dark_hour() || !dark_hour_indoor()) return;
+
+    // Palace authors several actor environments with an almost black ambient.
+    // The shared indoor conversion correctly colors that input but cannot create
+    // visibility from zero. Supply a restrained cool fill only to the actor TEV;
+    // directional room lights still provide the shape and exterior-green accents.
+    tev.AmbCol.r = std::max<s16>(tev.AmbCol.r, 52);
+    tev.AmbCol.g = std::max<s16>(tev.AmbCol.g, 70);
+    tev.AmbCol.b = std::max<s16>(tev.AmbCol.b, 100);
+}
+
 void apply_outdoor_moonlight(dKy_tevstr_c& tev) {
     if (runtime_settings().style != Style::DarkHour || dark_hour_indoor()) return;
 
@@ -509,12 +521,15 @@ void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
         const float luma =
             std::max(0.0f, ambient.r * 0.20f + ambient.g * 0.70f + ambient.b * 0.10f);
         if (dark_hour_indoor()) {
-            fog.r = static_cast<s16>(std::clamp(luma * 0.08f + 4.0f, 0.0f, 1023.0f));
-            fog.g = static_cast<s16>(std::clamp(luma * 0.14f + 8.0f, 0.0f, 1023.0f));
-            fog.b = static_cast<s16>(std::clamp(luma * 0.24f + 14.0f, 0.0f, 1023.0f));
-            fogFar = std::clamp(fogFar > 100.0f ? fogFar : 5000.0f, 1200.0f, 6000.0f);
-            const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.58f;
-            fogNear = std::clamp(std::max(authoredNear, fogFar * 0.58f),
+            // Keep the cool atmospheric depth without letting near-black fog sweep
+            // across the room as the camera turns. A lighter blue and later onset
+            // preserve distant geometry while retaining the indoor mood.
+            fog.r = static_cast<s16>(std::clamp(luma * 0.12f + 8.0f, 0.0f, 1023.0f));
+            fog.g = static_cast<s16>(std::clamp(luma * 0.21f + 14.0f, 0.0f, 1023.0f));
+            fog.b = static_cast<s16>(std::clamp(luma * 0.36f + 24.0f, 0.0f, 1023.0f));
+            fogFar = std::clamp(fogFar > 100.0f ? fogFar : 7800.0f, 4500.0f, 9000.0f);
+            const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.72f;
+            fogNear = std::clamp(std::max(authoredNear, fogFar * 0.72f),
                                  0.0f, fogFar - 1.0f);
             return;
         } else {
@@ -773,6 +788,7 @@ void set_light_actor_post(ModContext*, void* args, void*, void*) {
     auto* fogFar = mods::arg<float*>(args, 4);
     apply_distance_fog(*fog, *fogNear, *fogFar);
     if (dark_hour_indoor()) tint_dark_hour_background_color(tev->AmbCol);
+    apply_palace_indoor_actor_fill(*tev);
     const float factor = brightness();
     scale_color(tev->AmbCol, factor);
     for (int i = 0; i < 6; ++i) {

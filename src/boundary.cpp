@@ -205,7 +205,8 @@ void visual_effect_post(ModContext*, void*, void*, void*) {
 HookAction background_material_light_pre(ModContext*, void* args, void*, void*) {
     begin_visual_environment();
     auto* tev = mods::arg<dKy_tevstr_c*>(args, 2);
-    if (tev == nullptr || !visual_effects_active() || palace_excluded() || is_palace_stage() ||
+    if (tev == nullptr || !visual_effects_active() || palace_excluded() ||
+        (is_palace_stage() && !environment::dark_hour_indoor()) ||
         fopAcM_SearchByName(fpcNm_TITLE_e) != nullptr ||
         runtime_settings().style != Style::DarkHour || tev->Type < 32 || tev->Type > 35)
     {
