@@ -7,6 +7,7 @@ namespace twilight_visuals {
 struct Settings {
     ConfigVarHandle enabled{};
     ConfigVarHandle visualEffects{};
+    ConfigVarHandle twilightCameraLight{};
     ConfigVarHandle style{};
     ConfigVarHandle brightness{};
     ConfigVarHandle perAreaBrightness{};

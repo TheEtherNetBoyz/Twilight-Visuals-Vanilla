@@ -4,5 +4,7 @@
 namespace twilight_visuals::sky {
 bool read(VisualSkybox*, const char*, u8, u8, u8);
 bool select_layer(int layer, int minimum);
+bool has_layer(int layer, int minimum);
+bool has_vrbox_layer(int layer, int minimum);
 void shutdown();
 }

@@ -45,6 +45,7 @@ void refresh_runtime_settings() {
     const Settings& config = settings();
     g_runtime.enabled = get_bool(config.enabled);
     g_runtime.visualEffects = get_bool(config.visualEffects, true);
+    g_runtime.twilightCameraLight = get_bool(config.twilightCameraLight, true);
     g_runtime.style = static_cast<Style>(std::clamp<std::int64_t>(get_int(config.style), 0, 3));
     g_runtime.brightness =
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.brightness, 100), 0, 120)) /
@@ -117,7 +118,7 @@ void provide_visual_state(u8* enabled, u8* style, f32* brightness,
 
 s16 provide_enemy_proc(s16 procName) {
     const char* stage = dComIfGp_getStartStageName();
-    if (!active() || stage == nullptr || palace_excluded() ||
+    if (!visual_effects_active() || stage == nullptr || palace_excluded() ||
         dComIfG_play_c::getLayerNo(0) == 14) {
         return procName;
     }
@@ -142,14 +143,21 @@ s16 provide_enemy_proc(s16 procName) {
 
 s32 provide_environment_layer(s32 currentLayer) {
     const char* stage = dComIfGp_getStartStageName();
-    if (!visual_effects_active() || stage == nullptr || palace_excluded()) {
-        return -1;
-    }
-    return 14;
+    (void)currentLayer;
+    // Twilight Visuals is visual-only. Never substitute the engine's layer-14
+    // map/environment layer: it can bring Twilight actors, vessels, ghosts,
+    // and incomplete room-specific tables with it. The environment hooks apply
+    // the complete visual preset to the room's existing tables instead.
+    if (!visual_effects_active() || stage == nullptr || palace_excluded()) return -1;
+    return -1;
 }
 
 u8 provide_bloom_profile(u8 defaultProfile) {
     const char* stage = dComIfGp_getStartStageName();
+    // Normal Twilight must retain the authored layer's bloom table. For rooms
+    // without one, environment.cpp supplies the canonical fallback profile
+    // after the room environment has been built.
+    if (g_runtime.style == Style::Normal) return defaultProfile;
     return visual_effects_active() && stage && !palace_excluded() &&
         !daPy_py_c::checkNowWolfPowerUp() && g_env_light.field_0x12fc < 0 ? 1 : defaultProfile;
 }

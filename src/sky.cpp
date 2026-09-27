@@ -115,13 +115,37 @@ bool select_layer(int layer, int minimum) {
     auto* pal = layer_node(file, "PAL", selected);
     auto* vrb = layer_node(file, "VRB", selected);
     auto* light = layer_node(file, "LGT", selected);
-    if (!env || !col || !pal || !vrb) return false;
+    if (!env || !col || !pal) return false;
     stage->setEnvrInfo((stage_envr_info_class*)env->m_offset);
     stage->setPselectInfo((stage_pselect_info_class*)col->m_offset);
     stage->setPaletteInfo((stage_palette_info_class*)pal->m_offset);
-    stage->setVrboxcolInfo((stage_vrboxcol_info_class*)vrb->m_offset);
+    if (vrb) stage->setVrboxcolInfo((stage_vrboxcol_info_class*)vrb->m_offset);
     stage->setLightVecInfo(light ? (stage_pure_lightvec_info_class*)light->m_offset : nullptr);
     stage->setLightVecInfoNum(light ? int(light->m_entryNum) : 0);
     return true;
+}
+bool has_layer(int layer, int minimum) {
+    auto* stage = dComIfGp_getStage();
+    if (!stage || layer < 0 || layer >= 15) return false;
+    auto* elst = stage->getElst();
+    const int room = dComIfGp_roomControl_getStayNo();
+    if (!elst || !elst->m_entries || room < 0 || room >= elst->m_entryNum) return false;
+    const int selected = elst->m_entries[room].m_layerTable[layer];
+    if (selected < minimum || selected >= 15) return false;
+    auto* file = (dStage_fileHeader*)dComIfG_getStageRes("stage.dzs");
+    return layer_node(file, "Env", selected) != nullptr &&
+           layer_node(file, "Col", selected) != nullptr &&
+           layer_node(file, "PAL", selected) != nullptr;
+}
+bool has_vrbox_layer(int layer, int minimum) {
+    auto* stage = dComIfGp_getStage();
+    if (!stage || layer < 0 || layer >= 15) return false;
+    auto* elst = stage->getElst();
+    const int room = dComIfGp_roomControl_getStayNo();
+    if (!elst || !elst->m_entries || room < 0 || room >= elst->m_entryNum) return false;
+    const int selected = elst->m_entries[room].m_layerTable[layer];
+    if (selected < minimum || selected >= 15) return false;
+    auto* file = (dStage_fileHeader*)dComIfG_getStageRes("stage.dzs");
+    return layer_node(file, "VRB", selected) != nullptr;
 }
 }

@@ -20,7 +20,8 @@ enum class MenuScaling : std::int64_t {
 };
 enum class LoadMode : std::int64_t { Normal = 0, Fast = 1 };
 struct RuntimeSettings {
-    bool enabled{}; bool visualEffects{true}; Style style{Style::Normal}; float brightness{1.0f};
+    bool enabled{}; bool visualEffects{true}; bool twilightCameraLight{true};
+    Style style{Style::Normal}; float brightness{1.0f};
     int chromaticAberration{80}; Skybox skybox{Skybox::TwilightDay};
     Weather weather{Weather::Current}; float musicVolume{1.0f};
     BloomMode bloomMode{BloomMode::Native}; float bloomBrightness{1.0f};

@@ -6,4 +6,6 @@ void begin_visual_environment();
 void end_visual_environment();
 void set_native_moon_initialization(bool enabled);
 bool native_moon_initialization_active();
+bool using_authored_twilight_environment();
+bool using_authored_twilight_sky();
 }

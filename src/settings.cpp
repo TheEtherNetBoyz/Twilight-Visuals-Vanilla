@@ -273,6 +273,10 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Enable the selected visual style's lighting, tint, bloom, sky, particles, visual post-processing, "
         "and custom music. The master mod toggle and non-visual features remain independent.",
         g_settings.visualEffects);
+    add_toggle(left, "Twilight Camera Light",
+        "Use Twilight's camera-following spotlight. Disable this to test without the moving "
+        "bright and dark bands while retaining the sky, weather, particles, bloom, and static lighting.",
+        g_settings.twilightCameraLight);
     add_select(left, "Visual Style & Music",
         "Select the complete environment style and its matching music. Normal Twilight and Black "
         "and White use Palace music; Astral Plane and The Dark Hour use their matching tracks.",
@@ -449,6 +453,8 @@ ModResult register_settings(ModError*) {
     ModResult result = register_bool("twilight-visuals", false, g_settings.enabled);
     if (result != MOD_OK) return result;
     result = register_bool("visual-effects", true, g_settings.visualEffects);
+    if (result != MOD_OK) return result;
+    result = register_bool("twilight-camera-light", true, g_settings.twilightCameraLight);
     if (result != MOD_OK) return result;
     result = register_int("visual-style", 0, g_settings.style);
     if (result != MOD_OK) return result;

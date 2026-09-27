@@ -3,6 +3,7 @@
 #include "compat.hpp"
 #include "runtime.hpp"
 #include "boundary.hpp"
+#include "sky.hpp"
 
 #include "mods/service.hpp"
 #include "hook_api.hpp"
@@ -126,6 +127,19 @@ bool g_windGustActive{};
 bool environment_active() {
     const char* stage = dComIfGp_getStartStageName();
     return visual_effects_active() && stage != nullptr && !palace_excluded();
+}
+
+// Dusklight's global visual-Twilight option only converts rooms that are not
+// already in native Twilight. Native Twilight rooms already carry their
+// authored sky, fog, lights, and bloom and must never be processed twice.
+bool emulated_normal_twilight() {
+    // Every non-native room uses one deterministic visual conversion. Layer 14
+    // is not a portable indication of an authored Twilight environment and was
+    // responsible for both green skies and cleared Twilight regions receiving
+    // no conversion at all.
+    return environment_active() && runtime_settings().style == Style::Normal &&
+           dComIfG_play_c::getLayerNo(0) != 14 &&
+           !boundary::using_authored_twilight_environment();
 }
 
 bool dark_hour_dungeon_indoor() {
@@ -322,6 +336,83 @@ void scale_light(J3DLightObj& light, float factor) {
     info->mColor.b = scale_channel(info->mColor.b, factor);
 }
 
+void normal_twilight_tint(GXColorS10& color, u8 red, u8 green, u8 blue) {
+    color.r = static_cast<s16>(std::clamp((static_cast<s32>(color.r) * red) / 255, 0, 255));
+    color.g = static_cast<s16>(std::clamp((static_cast<s32>(color.g) * green) / 255, 0, 255));
+    color.b = static_cast<s16>(std::clamp((static_cast<s32>(color.b) * blue) / 255, 0, 255));
+}
+
+void normal_twilight_tint(J3DLightObj& light, u8 red, u8 green, u8 blue) {
+    J3DLightInfo* info = light.getLightInfo();
+    info->mColor.r = static_cast<u8>((static_cast<u32>(info->mColor.r) * red) / 255);
+    info->mColor.g = static_cast<u8>((static_cast<u32>(info->mColor.g) * green) / 255);
+    info->mColor.b = static_cast<u8>((static_cast<u32>(info->mColor.b) * blue) / 255);
+}
+
+void normal_twilight_fog(GXColorS10& color, float& fogNear, float& fogFar) {
+    color.r = static_cast<s16>(std::clamp((color.r + 42 * 3) / 4, 0, 255));
+    color.g = static_cast<s16>(std::clamp((color.g + 58 * 3) / 4, 0, 255));
+    color.b = static_cast<s16>(std::clamp((color.b + 74 * 3) / 4, 0, 255));
+    fogNear = std::min(fogNear, 1800.0f);
+    fogFar = std::min(fogFar, 18000.0f);
+}
+
+void apply_normal_twilight_environment(dScnKy_env_light_c& env) {
+    if (!environment_active() || runtime_settings().style != Style::Normal ||
+        dComIfG_play_c::getLayerNo(0) == 14) return;
+
+    if (emulated_normal_twilight()) {
+        normal_twilight_tint(env.actor_amb_col, 205, 180, 218);
+        for (int i = 0; i < 4; ++i)
+            normal_twilight_tint(env.bg_amb_col[i], 176, 169, 208);
+        for (int i = 0; i < 6; ++i)
+            normal_twilight_tint(env.dungeonlight_col[i], 214, 193, 224);
+        normal_twilight_fog(env.fog_col, env.mFogNear, env.mFogFar);
+    }
+
+    // Some rooms provide authored Twilight lighting tables but no VRB table.
+    // Preserve their authored lighting while supplying the missing canonical
+    // Twilight sky instead of leaving the room under its normal gray sky.
+    if (boundary::using_authored_twilight_sky()) return;
+    env.vrbox_sky_col = {24, 48, 72, 255};
+    env.vrbox_kumo_top_col = {112, 108, 80, 176};
+    env.vrbox_kumo_bottom_col = {43, 68, 79, 255};
+    env.vrbox_kumo_shadow_col = {18, 29, 45, 176};
+    env.vrbox_kasumi_outer_col = {119, 91, 49, 255};
+    env.vrbox_kasumi_inner_col = {57, 75, 81, 255};
+    env.hide_vrbox = false;
+
+    // Use vanilla's authored Twilight sky colors, but deliberately do not copy
+    // the source area's fog distances or fog color. Those stage-specific fog
+    // values caused the severe white/gold overexposure seen in other maps.
+    VisualSkybox twilightSky{};
+    if (sky::read(&twilightSky, "F_SP108", 14, 0, 10)) {
+        env.vrbox_sky_col = {twilightSky.sky.r, twilightSky.sky.g,
+                             twilightSky.sky.b, env.vrbox_sky_col.a};
+        env.vrbox_kumo_top_col = {twilightSky.cloudTop.r,
+                                  twilightSky.cloudTop.g,
+                                  twilightSky.cloudTop.b,
+                                  env.vrbox_kumo_top_col.a};
+        env.vrbox_kumo_bottom_col = {twilightSky.cloudBottom.r,
+                                     twilightSky.cloudBottom.g,
+                                     twilightSky.cloudBottom.b,
+                                     env.vrbox_kumo_bottom_col.a};
+        env.vrbox_kumo_shadow_col = {twilightSky.cloudShadow.r,
+                                     twilightSky.cloudShadow.g,
+                                     twilightSky.cloudShadow.b,
+                                     twilightSky.cloudShadow.a};
+        env.vrbox_kasumi_outer_col = {twilightSky.hazeOuter.r,
+                                      twilightSky.hazeOuter.g,
+                                      twilightSky.hazeOuter.b,
+                                      twilightSky.hazeOuter.a};
+        env.vrbox_kasumi_inner_col = {twilightSky.hazeInner.r,
+                                      twilightSky.hazeInner.g,
+                                      twilightSky.hazeInner.b,
+                                      twilightSky.hazeInner.a};
+    }
+
+}
+
 // Dark Hour should keep the authored differences between areas, but bright
 // Outdoor palettes must not turn into clipped neon when the green tint is
 // applied. Indoor rooms use this same clamp before switching to blue.
@@ -468,6 +559,10 @@ void grayscale(J3DLightObj& light) {
 
 float brightness() {
     if (!environment_active()) return 1.0f;
+    // Normal Twilight is a fidelity preset. Its layer-14 palette already has
+    // the complete authored exposure, so do not multiply it by the mod's
+    // global or per-area brightness controls.
+    if (runtime_settings().style == Style::Normal) return 1.0f;
     float value = runtime_settings().brightness;
     if (runtime_settings().style == Style::AstralPlane) value *= 0.65f;
     return std::clamp(value, 0.0f, 1.2f);
@@ -503,7 +598,9 @@ void adjust_high_camera_fog(float& fogNear, float& fogFar) {
 
 void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
     if (!environment_active()) return;
-    if (runtime_settings().style == Style::AstralPlane) {
+    if (emulated_normal_twilight()) {
+        normal_twilight_fog(fog, fogNear, fogFar);
+    } else if (runtime_settings().style == Style::AstralPlane) {
         const GXColorS10& ambient = g_env_light.bg_amb_col[0];
         const auto channel = [](s16 fogValue, s16 ambientValue) {
             return static_cast<s16>(
@@ -614,6 +711,11 @@ void apply_dark_hour_palette(dScnKy_env_light_c& env) {
 void apply_authored_skybox(dScnKy_env_light_c& env) {
     if (!environment_active()) return;
 
+    // The Normal preset must use the current stage's own layer-14 sky palette.
+    // The selectable cross-stage skybox override is reserved for custom styles;
+    // applying it here is what made Normal Twilight diverge from native Twilight.
+    if (runtime_settings().style == Style::Normal) return;
+
     // Load the authored palette in the mod; no host-side sky cache survives a reload.
     VisualSkybox sky{};
     const u8 variant = static_cast<u8>(runtime_settings().skybox);
@@ -634,14 +736,38 @@ void apply_authored_skybox(dScnKy_env_light_c& env) {
 }
 
 void apply_mfb_bloom_profile() {
-    if (!environment_active() || daPy_py_c::checkNowWolfPowerUp() ||
-        g_env_light.field_0x12fc >= 0) return;
+    if (!environment_active()) return;
+    const bool normalTwilight = runtime_settings().style == Style::Normal;
+    if (normalTwilight && dComIfG_play_c::getLayerNo(0) == 14) return;
+    if (normalTwilight && boundary::using_authored_twilight_environment()) return;
+    // The vanilla global-Twilight option owns bloom unconditionally. Preserve
+    // the older wolf/event exclusions only for the custom visual styles.
+    if (!normalTwilight &&
+        (daPy_py_c::checkNowWolfPowerUp() || g_env_light.field_0x12fc >= 0)) return;
     const dKydata_BloomInfo_c* profile = dKyd_BloomInf_tbl_getp(1);
     if (profile == nullptr) return;
     auto* bloom = mDoGph_gInf_c::getBloom();
+    // Dusklight's vanilla global-Twilight option explicitly allocates bloom in
+    // rooms whose native environment has it disabled. Merely copying profile 1
+    // into an unallocated bloom object leaves Normal Twilight dark and flat.
+    if (normalTwilight) bloom->create();
     // Dark Hour uses the same authored Twilight bloom preset. Only the color is
     // changed below to keep its green identity; threshold, blur, density, and
     // blend strength must remain identical to regular Twilight.
+    if (normalTwilight) {
+        bloom->setPoint(profile->info.mThreshold);
+        bloom->setBlureSize(profile->info.mBlurAmount);
+        bloom->setBlureRatio(profile->info.mDensity);
+        bloom->setBlendColor({profile->info.mColorR, profile->info.mColorG,
+                              profile->info.mColorB, profile->info.mOrigDensity});
+        bloom->setMonoColor({profile->info.mSaturateSubtractR,
+                             profile->info.mSaturateSubtractG,
+                             profile->info.mSaturateSubtractB,
+                             profile->info.mSaturateSubtractA});
+        bloom->setEnable(1);
+        bloom->setMode(profile->info.mType != BLOOM_CLEAR);
+        return;
+    }
     const bool indoor = dark_hour_indoor();
     // Indoors, preserve the blue base grade but let bright authored details
     // bloom in the exterior Dark Hour green. This creates localized glow
@@ -677,6 +803,7 @@ void apply_mfb_bloom_profile() {
 void set_light_post(ModContext*, void* args, void*, void*) {
     if (!environment_active()) return;
     auto* env = mods::arg<dScnKy_env_light_c*>(args, 0);
+    apply_normal_twilight_environment(*env);
     apply_authored_skybox(*env);
     apply_astral_palette(*env);
     apply_dark_hour_palette(*env);
@@ -759,6 +886,12 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
     auto* fogNear = mods::arg<float*>(args, 4);
     auto* fogFar = mods::arg<float*>(args, 5);
     apply_distance_fog(*fog, *fogNear, *fogFar);
+    if (emulated_normal_twilight()) {
+        for (int i = 0; i < 4; ++i)
+            normal_twilight_tint(colors[i], 176, 169, 208);
+        for (int i = 0; i < 6; ++i)
+            normal_twilight_tint(tev->mLights[i], 214, 193, 224);
+    }
     const float factor = brightness();
     for (int i = 0; i < 4; ++i) {
         tint_dark_hour_background_color(colors[i]);
@@ -787,6 +920,11 @@ void set_light_actor_post(ModContext*, void* args, void*, void*) {
     auto* fogNear = mods::arg<float*>(args, 3);
     auto* fogFar = mods::arg<float*>(args, 4);
     apply_distance_fog(*fog, *fogNear, *fogFar);
+    if (emulated_normal_twilight()) {
+        normal_twilight_tint(tev->AmbCol, 205, 180, 218);
+        for (int i = 0; i < 6; ++i)
+            normal_twilight_tint(tev->mLights[i], 214, 193, 224);
+    }
     if (dark_hour_indoor()) tint_dark_hour_background_color(tev->AmbCol);
     apply_palace_indoor_actor_fill(*tev);
     const float factor = brightness();

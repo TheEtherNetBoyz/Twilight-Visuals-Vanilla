@@ -18,6 +18,7 @@ static int s_visual_environment_layer = -1;
 static int s_visual_environment_room = -1;
 static char s_visual_environment_stage[16] = {};
 static bool s_visual_environment_has_twilight_layer = false;
+static bool s_visual_environment_has_twilight_sky = false;
 static int s_visual_environment_loaded_layer = 0;
 static bool s_visual_environment_loaded_twilight = false;
 static bool s_visual_environment_area_initialized = false;
@@ -28,6 +29,8 @@ static unsigned s_visual_environment_depth = 0;
 static bool s_visual_moon_position_saved = false;
 static cXyz s_visual_moon_position{};
 static bool s_native_moon_initialization = false;
+static bool s_camera_light_visual_scope = false;
+static bool s_environment_execute_visual_scope = false;
 static bool s_midnight_lighting_time_saved = false;
 static f32 s_midnight_lighting_real_time = 0.0f;
 
@@ -38,6 +41,22 @@ struct BackgroundLightState {
     bool saved{};
 };
 static BackgroundLightState s_backgroundLightState;
+
+struct VisualLayerState {
+    dStage_stageDt_c* stage{};
+    stage_envr_info_class* stageEnvr{};
+    stage_pselect_info_class* stagePselect{};
+    stage_palette_info_class* stagePalette{};
+    stage_vrboxcol_info_class* stageVrbox{};
+    stage_pure_lightvec_info_class* stageLightVec{};
+    int stageLightVecNum{};
+    stage_envr_info_class* envr{};
+    stage_pselect_info_class* pselect{};
+    stage_palette_info_class* palette{};
+    stage_vrboxcol_info_class* vrbox{};
+    bool saved{};
+};
+static VisualLayerState s_visualLayerState;
 
 DEFINE_HOOK(&dScnKy_env_light_c::exeKankyo, EnvironmentExecute);
 DEFINE_HOOK(&dScnKy_env_light_c::setDaytime, EnvironmentSetDaytime);
@@ -64,14 +83,14 @@ static bool is_palace_stage() {
 }
 
 // MFB feeds this decision through dKy_darkworld_visual_effect_check(), so every
-// engine lighting path sees the same Dark Hour state. Vanilla Dusklight does not
-// expose that provider, therefore the dKy_darkworld_check hook below is the
-// compatibility boundary. Keep it limited to an actual gameplay scene so stale
-// stage names cannot affect title screens or cutscenes.
-static bool dark_hour_visual_effects_active() {
+// engine lighting, sky, cloud, weather, and material path sees visual Twilight
+// for every Twilight Visuals style. Vanilla Dusklight does not expose that
+// provider, therefore the dKy_darkworld_check hook below is the compatibility
+// boundary. Keep it limited to an owned render/environment scope so gameplay,
+// actors, HUD, events, and the actual map layer remain in their native state.
+static bool scoped_visual_twilight_active() {
     const char* stage = dComIfGp_getStartStageName();
-    return visual_effects_active() && runtime_settings().style == Style::DarkHour &&
-           s_visual_environment_depth != 0 &&
+    return visual_effects_active() && s_visual_environment_depth != 0 &&
            stage != nullptr && dComIfGp_getStage() != nullptr &&
            fopAcM_SearchByName(fpcNm_TITLE_e) == nullptr && !palace_excluded();
 }
@@ -110,6 +129,8 @@ static void update() {
     // layer into the live scene. The loaded layer is committed by
     // envcolor_init() only when a complete area environment is created.
     if (forceTwilight == s_visual_environment_forced) {
+        s_visual_environment_has_twilight_layer = false;
+        s_visual_environment_has_twilight_sky = false;
         return;
     }
 
@@ -123,7 +144,11 @@ static void update() {
     } else {
         s_visual_environment_stage[0] = '\0';
     }
-    s_visual_environment_has_twilight_layer = sky::select_layer(layerNo, layerNo == 14 ? 10 : 0);
+    // The preset deliberately never substitutes a technical Twilight layer.
+    // Keep these capability flags false so the visual conversion fills every
+    // property from the room's current environment consistently.
+    s_visual_environment_has_twilight_layer = false;
+    s_visual_environment_has_twilight_sky = false;
 
     if (forceTwilight || wasForced || s_visual_environment_has_twilight_layer) {
         if (dComIfGp_getStageEnvrInfo() != NULL) {
@@ -165,6 +190,13 @@ HookAction environment_execute_pre(ModContext*, void*, void*, void*) {
         s_midnight_lighting_time_saved = false;
     }
     update();
+    // exeKankyo owns the persistent sky/cloud/weather/shadow state for the
+    // frame. Its child hooks alone are too late: cleared Twilight-capable maps
+    // otherwise retain daylight sky visibility and never acquire the complete
+    // native Twilight environment state.
+    s_environment_execute_visual_scope = visual_effects_active() &&
+                                         !palace_excluded();
+    if (s_environment_execute_visual_scope) begin_visual_environment();
     return HOOK_CONTINUE;
 }
 
@@ -179,11 +211,26 @@ void environment_set_daytime_post(ModContext*, void*, void*, void*) {
     g_env_light.daytime = 0.0f;
 }
 
-void environment_execute_post(ModContext*, void*, void*, void*) {}
+void environment_execute_post(ModContext*, void*, void*, void*) {
+    if (s_environment_execute_visual_scope) end_visual_environment();
+    s_environment_execute_visual_scope = false;
+}
 
 HookAction visual_effect_pre(ModContext*, void*, void*, void*) {
     begin_visual_environment();
     return HOOK_CONTINUE;
+}
+
+HookAction twilight_camera_light_pre(ModContext*, void*, void*, void*) {
+    s_camera_light_visual_scope = visual_effects_active() &&
+                                  runtime_settings().twilightCameraLight;
+    if (s_camera_light_visual_scope) begin_visual_environment();
+    return HOOK_CONTINUE;
+}
+
+void twilight_camera_light_post(ModContext*, void*, void*, void*) {
+    if (s_camera_light_visual_scope) end_visual_environment();
+    s_camera_light_visual_scope = false;
 }
 
 HookAction sun_moon_light_check_pre(ModContext*, void*, void* retval, void*) {
@@ -266,13 +313,13 @@ void background_material_light_post(ModContext*, void*, void*, void*) {
 }
 
 HookAction native_darkworld_check_pre(ModContext*, void*, void* retval, void*) {
-    // Dark Hour emulates Twilight visually; it must not report native Twilight
+    // All styles emulate Twilight visually; they must not report native Twilight
     // to gameplay, actor, HUD, or event systems. Return the visual state only
     // while one of our lighting/render hooks owns the environment scope.
     // ForceMoon still bypasses this narrow visual result while allocating the
     // native celestial packet.
     if (s_native_moon_initialization) return HOOK_CONTINUE;
-    if (!dark_hour_visual_effects_active())
+    if (!scoped_visual_twilight_active())
         return HOOK_CONTINUE;
     *static_cast<u8*>(retval) = TRUE;
     return HOOK_SKIP_ORIGINAL;
@@ -286,6 +333,14 @@ HookAction environment_color_init_pre(ModContext*, void*, void*, void*) {
 }
 
 void environment_color_init_post(ModContext*, void*, void*, void*) {
+    // envcolor_init() refreshes the live stage environment pointers after our
+    // pre-hook runs, which replaces the visual layer we selected with the
+    // room's ordinary layer. Re-run the selection after vanilla initialization
+    // so sky, palette, bloom, fog, and light tables all come from the intended
+    // Twilight environment. Clear the transition latch first because this is
+    // a pointer re-commit, not a user-visible setting transition.
+    s_visual_environment_forced = false;
+    update();
     end_visual_environment();
 }
 }
@@ -312,10 +367,44 @@ void initialize() {
     mods::hook::add_post<SwordFlushSet>(visual_effect_post);
     mods::hook::add_pre<SunMoonLightCheck>(sun_moon_light_check_pre);
     mods::hook::add_post<SunMoonLightCheck>(visual_effect_post);
-    mods::hook::add_pre<TwilightCameraLightSet>(visual_effect_pre);
-    mods::hook::add_post<TwilightCameraLightSet>(visual_effect_post);
+    mods::hook::add_pre<TwilightCameraLightSet>(twilight_camera_light_pre);
+    mods::hook::add_post<TwilightCameraLightSet>(twilight_camera_light_post);
 }
 void begin_visual_environment() {
+    if (s_visual_environment_depth == 0 && visual_effects_active() &&
+        !palace_excluded() && dComIfG_play_c::getLayerNo(0) != 14) {
+        auto* stage = dComIfGp_getStage();
+        if (stage != nullptr) {
+            s_visualLayerState.stage = stage;
+            s_visualLayerState.stageEnvr = stage->getEnvrInfo();
+            s_visualLayerState.stagePselect = stage->getPselectInfo();
+            s_visualLayerState.stagePalette = stage->getPaletteInfo();
+            s_visualLayerState.stageVrbox = stage->getVrboxcolInfo();
+            s_visualLayerState.stageLightVec = stage->getLightVecInfo();
+            s_visualLayerState.stageLightVecNum = stage->getLightVecInfoNum();
+            s_visualLayerState.envr = g_env_light.stage_envr_info;
+            s_visualLayerState.pselect = g_env_light.stage_pselect_info;
+            s_visualLayerState.palette = g_env_light.stage_palette_info;
+            s_visualLayerState.vrbox = g_env_light.stage_vrboxcol_info;
+
+            if (!sky::select_layer(14, 10)) {
+                s_visualLayerState = {};
+            } else {
+                s_visualLayerState.saved = true;
+
+                // The engine reads these cached pointers during setLight and
+                // its background/actor passes. Only the render scope sees the
+                // authored Twilight tables; the stage's technical layer
+                // remains unchanged.
+                g_env_light.stage_envr_info = stage->getEnvrInfo();
+                g_env_light.stage_pselect_info = stage->getPselectInfo();
+                g_env_light.stage_palette_info = stage->getPaletteInfo();
+                g_env_light.stage_vrboxcol_info = stage->getVrboxcolInfo();
+                s_visual_environment_has_twilight_layer = true;
+                s_visual_environment_has_twilight_sky = stage->getVrboxcolInfo() != nullptr;
+            }
+        }
+    }
     if (s_visual_environment_depth == 0 && dark_hour_moon_lighting_active()) {
         s_visual_moon_position = g_env_light.moon_pos;
         s_visual_moon_position_saved = true;
@@ -331,12 +420,34 @@ void end_visual_environment() {
         g_env_light.moon_pos = s_visual_moon_position;
         s_visual_moon_position_saved = false;
     }
+    if (s_visual_environment_depth == 0 && s_visualLayerState.saved) {
+        auto& state = s_visualLayerState;
+        state.stage->setEnvrInfo(state.stageEnvr);
+        state.stage->setPselectInfo(state.stagePselect);
+        state.stage->setPaletteInfo(state.stagePalette);
+        state.stage->setVrboxcolInfo(state.stageVrbox);
+        state.stage->setLightVecInfo(state.stageLightVec);
+        state.stage->setLightVecInfoNum(state.stageLightVecNum);
+        g_env_light.stage_envr_info = state.envr;
+        g_env_light.stage_pselect_info = state.pselect;
+        g_env_light.stage_palette_info = state.palette;
+        g_env_light.stage_vrboxcol_info = state.vrbox;
+        state = {};
+        s_visual_environment_has_twilight_layer = false;
+        s_visual_environment_has_twilight_sky = false;
+    }
 }
 void set_native_moon_initialization(bool enabled) {
     s_native_moon_initialization = enabled;
 }
 bool native_moon_initialization_active() {
     return s_native_moon_initialization;
+}
+bool using_authored_twilight_environment() {
+    return s_visual_environment_has_twilight_layer;
+}
+bool using_authored_twilight_sky() {
+    return s_visual_environment_has_twilight_sky;
 }
 void shutdown() {
     restoring = true;
@@ -346,6 +457,8 @@ void shutdown() {
     s_visual_environment_area_initialized = false;
     s_visual_environment_depth = 0;
     s_native_moon_initialization = false;
+    s_camera_light_visual_scope = false;
+    s_environment_execute_visual_scope = false;
     if (s_midnight_lighting_time_saved)
         g_env_light.daytime = s_midnight_lighting_real_time;
     s_midnight_lighting_time_saved = false;
