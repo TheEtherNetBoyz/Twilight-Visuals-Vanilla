@@ -8,6 +8,7 @@
 #include "hook_api.hpp"
 #include "mods/svc/log.h"
 #include "d/d_com_inf_game.h"
+#include "d/d_stage.h"
 #include "d/d_meter2_draw.h"
 #include "d/d_meter2_info.h"
 #include "run_hold.hpp"
@@ -46,12 +47,41 @@ bool enabled(daAlink_c* p) {
 bool held(daAlink_c* p) {
     return enabled(p) && inputPlayer == p && aButton.running() && p->doButton();
 }
-bool moving(daAlink_c* p) { return held(p) && p->mProcID == daAlink_c::PROC_MOVE && p->mStickValue > 0.1f; }
+bool moving(daAlink_c* p) {
+    return held(p) &&
+        (p->mProcID == daAlink_c::PROC_MOVE ||
+         p->mProcID == daAlink_c::PROC_WAIT) &&
+        p->mStickValue > 0.1f;
+}
 bool dungeon_stage() {
     const char* stage = dComIfGp_getStartStageName();
     return stage != nullptr &&
         (std::strncmp(stage, "D_MN", 4) == 0 ||
          std::strncmp(stage, "D_SB", 4) == 0);
+}
+bool indoor_stage() {
+    const char* stageName = dComIfGp_getStartStageName();
+
+    // Dungeon stage types include a few open-air rooms. Prefer the room's
+    // authored sky-volume flag so those remain at outdoor sprint speed.
+    const bool dungeon = stageName != nullptr &&
+        (std::strncmp(stageName, "D_MN", 4) == 0 ||
+         std::strncmp(stageName, "D_SB", 4) == 0);
+    if (dungeon) {
+        auto* rooms = dComIfGp_getStageRoom();
+        const int room = dComIfGp_roomControl_getStayNo();
+        if (rooms != nullptr && room >= 0 && room < rooms->num &&
+            rooms->m_entries[room] != nullptr)
+        {
+            return dStage_roomRead_dt_c_GetVrboxswitch(*rooms->m_entries[room]) == 0;
+        }
+    }
+
+    auto* stage = dComIfGp_getStage();
+    auto* info = stage != nullptr ? stage->getStagInfo() : nullptr;
+    if (info == nullptr) return false;
+    const u32 type = dStage_stagInfo_GetSTType(info);
+    return type == ST_ROOM || type == ST_DUNGEON || type == ST_BOSS_ROOM;
 }
 bool sand_surface(daAlink_c* p) {
     return p != nullptr && p->mLinkAcch.ChkGroundHit() &&
@@ -59,8 +89,9 @@ bool sand_surface(daAlink_c* p) {
 }
 f32 run_speed(daAlink_c* p) {
     const f32 baseSpeed = dungeon_stage() ? 34.0f : 37.0f;
+    const f32 indoorScale = indoor_stage() ? 0.75f : 1.0f;
     const bool slowed = p->checkEquipHeavyBoots() || sand_surface(p);
-    return baseSpeed * (slowed ? 0.70f : 1.0f);
+    return baseSpeed * indoorScale * (slowed ? 0.70f : 1.0f);
 }
 bool water(daAlink_c* p) {
     if (!held(p) || !p->checkMagicArmorWearAbility() || p->checkMagneBootsOn() || p->mWaterY == -G_CM3D_F_INF) return false;
@@ -314,9 +345,8 @@ HookAction move_action_pre(ModContext*, void* args, void* retval, void*) {
     // its ready interpolation duration without changing Link's animation.
     // This hook runs after the game builds mItemButton/mItemTrigger.
     const bool eligible = enabled(p) &&
-        ((normalMovement && dComIfGp_getDoStatus() == BUTTON_STATUS_UNK_121) ||
-         (normalMovement && aButton.state == RunHold::State::Ready &&
-             status == BUTTON_STATUS_NONE) ||
+        ((normalMovement && (status == BUTTON_STATUS_UNK_121 ||
+                             status == BUTTON_STATUS_NONE)) ||
          (aButton.running() && (normalMovement ||
              p->mProcID == daAlink_c::PROC_FRONT_ROLL ||
              p->mProcID == daAlink_c::PROC_STEP_MOVE)));
