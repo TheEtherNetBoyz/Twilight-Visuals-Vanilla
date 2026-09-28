@@ -161,6 +161,8 @@ bool g_nativeHousiDrawSuppressed{};
 u8 g_savedHousiInitialized{};
 bool g_nativeStarDrawSuppressed{};
 u8 g_savedStarInitialized{};
+bool g_kakarikoDustDrawSuppressed{};
+u8 g_savedCloudInitialized{};
 bool g_savedNativeState{};
 bool g_savedDarkHourVrbox{};
 bool g_darkHourVrboxTemporarilyShown{};
@@ -177,6 +179,13 @@ bool dark_hour_moon_active() {
     const char* stage = dComIfGp_getStartStageName();
     return visual_effects_active() && !palace_excluded() && runtime_settings().style == Style::DarkHour &&
            stage != nullptr && *stage != '\0';
+}
+
+bool suppress_kakariko_normal_layer_dust() {
+    const char* stage = dComIfGp_getStartStageName();
+    return visual_effects_active() && runtime_settings().style == Style::Normal &&
+           stage != nullptr && std::strncmp(stage, "F_SP109", 7) == 0 &&
+           dComIfG_play_c::getLayerNo(0) != 14 && g_env_light.mMoyaMode == 8;
 }
 
 void restore_forced_moon_room() {
@@ -396,6 +405,16 @@ HookAction draw_pre(ModContext*, void*, void*, void*) {
         g_savedStarInitialized = g_env_light.mStarInitialized;
         g_env_light.mStarInitialized = 0;
     }
+    // Kakariko's normal layers place a ky_tag0 effect-volume with effect type
+    // 17 (mMoyaMode 8). Native Twilight layer 14 omits that volume. Hide only
+    // its camera-facing dust packet while emulating Normal Twilight, without
+    // disturbing Kakariko's other weather tag or cloud update state.
+    g_kakarikoDustDrawSuppressed =
+        suppress_kakariko_normal_layer_dust() && g_env_light.mCloudInitialized != 0;
+    if (g_kakarikoDustDrawSuppressed) {
+        g_savedCloudInitialized = g_env_light.mCloudInitialized;
+        g_env_light.mCloudInitialized = 0;
+    }
     return HOOK_CONTINUE;
 }
 
@@ -422,6 +441,10 @@ void weather_proc_post(ModContext*, void*, void*, void*) {
 }
 
 void draw_post(ModContext*, void*, void*, void*) {
+    if (g_kakarikoDustDrawSuppressed) {
+        g_env_light.mCloudInitialized = g_savedCloudInitialized;
+        g_kakarikoDustDrawSuppressed = false;
+    }
     run_trail::draw();
     blood::draw();
     if (g_nativeHousiDrawSuppressed) {
@@ -485,6 +508,10 @@ ModResult install_hooks() {
 }
 void uninstall_hooks() {
     run_trail::clear();
+    if (g_kakarikoDustDrawSuppressed) {
+        g_env_light.mCloudInitialized = g_savedCloudInitialized;
+        g_kakarikoDustDrawSuppressed = false;
+    }
     if (g_nativeHousiDrawSuppressed) {
         g_env_light.mHousiInitialized = g_savedHousiInitialized;
         g_nativeHousiDrawSuppressed = false;

@@ -41,6 +41,11 @@ bool castle_town() {
     return stage != nullptr && std::strncmp(stage, "F_SP116", 7) == 0;
 }
 
+bool kakariko_village() {
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr && std::strncmp(stage, "F_SP109", 7) == 0;
+}
+
 bool reduced_dark_hour_outdoor() {
     return forest_temple_outside_bridge() || faron_woods() || castle_town();
 }
@@ -560,9 +565,11 @@ void grayscale(J3DLightObj& light) {
 float brightness() {
     if (!environment_active()) return 1.0f;
     // Normal Twilight is a fidelity preset. Its layer-14 palette already has
-    // the complete authored exposure, so do not multiply it by the mod's
-    // global or per-area brightness controls.
-    if (runtime_settings().style == Style::Normal) return 1.0f;
+    // the complete authored exposure. Kakariko's visual-only table runs a bit
+    // hotter than the same table under the native Twilight state, so apply a
+    // restrained stage correction without changing other regions.
+    if (runtime_settings().style == Style::Normal)
+        return kakariko_village() ? 0.92f : 1.0f;
     float value = runtime_settings().brightness;
     if (runtime_settings().style == Style::AstralPlane) value *= 0.65f;
     return std::clamp(value, 0.0f, 1.2f);
