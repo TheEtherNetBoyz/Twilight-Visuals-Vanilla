@@ -47,6 +47,7 @@ u8 provide_bloom_profile(u8 defaultProfile);
 bool provide_scene_music(const char*, s32, s32, s32, bool, u8, u32*, u8*, u8*, bool*, bool*, s32*);
 bool provide_grass(bool* monochrome);
 bool palace_excluded();
+bool title_or_file_select_active();
 bool music_override_allowed();
 bool active();
 bool visual_effects_active();

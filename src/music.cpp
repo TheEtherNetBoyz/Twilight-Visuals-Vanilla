@@ -50,17 +50,32 @@ bool previousReplacementSelection = false;
 void refresh_scene_music_selection(bool replacementWanted, Z2SeqMgr* sequence,
                                    Z2StatusMgr* status) {
     Z2SceneMgr* scene = LiveSceneManager ? LiveSceneManager : Z2GetSceneMgr();
-    if (!sequence || !status || !scene ||
-        !scene->isSceneExist() || dComIfGp_isEnableNextStage() ||
-        status->getDemoStatus() != 0 || dComIfGp_event_runCheck()) {
+    // Menus can retain the previous gameplay stage name. Never try to restore
+    // authored gameplay audio from that stale name while title/file select is
+    // active; vanilla owns the menu transition and its audio state.
+    if (!replacementWanted && title_or_file_select_active()) return;
+    if (!replacementWanted && dComIfGp_getPlayer(0) == nullptr &&
+        !dComIfGp_isEnableNextStage()) return;
+    // The vanilla macOS build does not expose a status-manager singleton at
+    // this hook point. update_from_manager already treats that as demo 0; do
+    // the same here instead of rejecting every scene-selection refresh.
+    const bool missingState = !sequence || !scene;
+    const bool sceneNotReady = scene != nullptr && !scene->isSceneExist();
+    const bool nextStage = dComIfGp_isEnableNextStage();
+    const u8 demoStatus = status != nullptr ? status->getDemoStatus() : 0;
+    const bool eventRunning = dComIfGp_event_runCheck();
+    if (missingState || sceneNotReady || nextStage || demoStatus != 0 || eventRunning) {
         return;
     }
 
-    const bool palacePlaying = sequence->getMainBgmID() == Z2BGM_DUNGEON_LV8;
+    // During a room transition the sequence manager can continue reporting the
+    // outgoing track while it fades. The scene manager's requested ID is the
+    // authoritative choice for the area that is being loaded.
+    const bool palaceRequested = static_cast<u32>(scene->BGM_ID) == Z2BGM_DUNGEON_LV8;
     const bool selectionChanged = !sceneSelectionKnown ||
                                   replacementWanted != previousReplacementSelection;
-    if (!selectionChanged && (!replacementWanted || palacePlaying)) return;
-    if (replacementWanted && palacePlaying) {
+    if (!selectionChanged && (!replacementWanted || palaceRequested)) return;
+    if (replacementWanted && palaceRequested) {
         sceneSelectionKnown = true;
         previousReplacementSelection = true;
         return;
@@ -73,6 +88,17 @@ void refresh_scene_music_selection(bool replacementWanted, Z2SeqMgr* sequence,
         stage, room, dComIfGp_getStartStageLayer());
 
     if (replacementWanted) {
+        // The vanilla macOS build can have the legacy Z2SoundMgr singleton
+        // unset even though the audio interface is alive. Do not touch the
+        // scene or stop the current BGM unless the supported audio interface
+        // is available; the next framework pass can retry this refresh.
+        Z2AudioMgr* audio = Z2GetAudioMgr();
+        if (audio == nullptr) {
+            svc_log->warn(mod_ctx,
+                "SceneMusicRefresh skipped: audio interface unavailable");
+            return;
+        }
+
         // Do not depend on the provider being consulted during an in-place
         // settings refresh. Some vanilla builds keep the existing scene
         // selection and bypass that callback. Program the same native Palace
@@ -80,16 +106,37 @@ void refresh_scene_music_selection(bool replacementWanted, Z2SeqMgr* sequence,
         scene->sceneChange(JAISoundID(Z2BGM_DUNGEON_LV8),
             scene->requestSeWave_1, scene->requestSeWave_2,
             0x28, 0, scene->requestDemoWave, false);
+
+        // sceneBgmStart() is not safe on the vanilla macOS build because its
+        // status-manager singleton is unavailable there. Recreate the small
+        // native start sequence directly after loading the requested wave;
+        // leaving sceneExist false here makes every non-Palace area go silent.
+        scene->load1stWait = 0;
+        scene->_load1stWaveInner_2();
+        sequence->bgmStop(0, 0);
+        audio->startSound(JAISoundID(Z2BGM_DUNGEON_LV8),
+            sequence->getMainBgmHandle(), nullptr);
+        sequence->mMainBgmMaster.forceIn();
+        sequence->mSceneBgm.forceIn();
+        sequence->mAllBgmMaster.forceIn();
+        // The vanilla Palace sequence uses room number as its layer selector:
+        // nonzero room values select the interior arrangement. Keep status 0
+        // so the exterior Palace arrangement is used everywhere.
+        sequence->changeBgmStatus(0);
+        scene->field_0x1a = false;
+        scene->setSceneExist(true);
     } else {
         // Disabling the replacement must restore the room's authored BGM and
         // wave banks, so run the complete vanilla scene lookup in that case.
         mDoAud_setSceneName(stage, room, layer);
     }
     scene->timer = 0;
-    scene->setSceneExist(false);
-    if (scene->load1stWait == 0)
-        scene->_load1stWaveInner_1();
-    mDoAud_zelAudio_c::onBgmSet();
+    if (!replacementWanted) {
+        scene->setSceneExist(false);
+        if (scene->load1stWait == 0)
+            scene->_load1stWaveInner_1();
+        mDoAud_zelAudio_c::onBgmSet();
+    }
 
     sceneSelectionKnown = true;
     previousReplacementSelection = replacementWanted;
@@ -440,14 +487,24 @@ HookAction scene_change_pre(ModContext*, void* args, void*, void*) {
     bool streams = false, field = false;
     s32 status = -1;
     u32 id = static_cast<u32>(bgm);
-    // Suppress destination BGM before its first audio frame while a load/void
-    // transition is carrying custom ownership across the missing-player gap.
-    if (customOwnership.load(std::memory_order_relaxed))
-        NativeBgmMute.store(true, std::memory_order_relaxed);
-    if (provide_scene_music(stage, dComIfGp_roomControl_getStayNo(),
+    const bool replaced = provide_scene_music(stage, dComIfGp_roomControl_getStayNo(),
             dComIfGp_getStartStageLayer(), scene ? scene->getCurrentSceneNum() : -1,
             scene && scene->isInDarkness(), demo, &id, &wave1, &wave2,
-            &streams, &field, &status)) {
+            &streams, &field, &status);
+    // Suppress destination BGM before its first audio frame while a load/void
+    // transition is carrying custom ownership across the missing-player gap.
+    // Normal and Black & White use the native Palace sequence, so they need
+    // the same handoff protection or the authored destination track leaks for
+    // a moment before the Palace request is processed.
+    const bool globalPalace = runtime_settings().style == Style::Normal ||
+                              runtime_settings().style == Style::BlackAndWhite;
+    if (customOwnership.load(std::memory_order_relaxed) ||
+        (replaced && globalPalace)) {
+        NativeBgmMute.store(true, std::memory_order_relaxed);
+    } else if (globalPalace) {
+        NativeBgmMute.store(false, std::memory_order_relaxed);
+    }
+    if (replaced) {
         bgm = JAISoundID(id);
         sceneStartPending.store(true);
     }
@@ -467,11 +524,20 @@ void scene_name_post(ModContext*, void* args, void*, void*) {
     u8 wave2 = scene->requestBgmWave_2;
     bool streams = false, field = false;
     s32 status = -1;
-    if (!provide_scene_music(stage, room, layer, scene->getCurrentSceneNum(),
+    const bool replaced = provide_scene_music(stage, room, layer, scene->getCurrentSceneNum(),
             scene->isInDarkness(), scene->requestDemoWave, &id, &wave1, &wave2,
-            &streams, &field, &status)) {
+            &streams, &field, &status);
+    if (!replaced) {
+        if (runtime_settings().style == Style::Normal ||
+            runtime_settings().style == Style::BlackAndWhite) {
+            NativeBgmMute.store(false, std::memory_order_relaxed);
+        }
         return;
     }
+
+    const bool globalPalace = runtime_settings().style == Style::Normal ||
+                              runtime_settings().style == Style::BlackAndWhite;
+    if (globalPalace) NativeBgmMute.store(true, std::memory_order_relaxed);
 
     // setSceneName has now finished vanilla's complete stage lookup. Apply the
     // replacement here, where the live scene object and wave requests are
@@ -590,6 +656,10 @@ void update_from_manager(Z2SeqMgr* p) {
     const bool ordinary = sub == Z2BGM_BATTLE_NORMAL || sub == Z2BGM_BATTLE_TWILIGHT;
     const bool rawEnabled = active() && music_override_allowed();
     refresh_scene_music_selection(rawEnabled, p, status);
+    const bool globalPalace = runtime_settings().style == Style::Normal ||
+                              runtime_settings().style == Style::BlackAndWhite;
+    if (rawEnabled && globalPalace && p->getMainBgmID() == Z2BGM_DUNGEON_LV8)
+        p->changeBgmStatus(0);
     const bool customStyle = runtime_settings().style == Style::AstralPlane ||
                              runtime_settings().style == Style::DarkHour;
     const bool playerExists = dComIfGp_getPlayer(0) != nullptr;

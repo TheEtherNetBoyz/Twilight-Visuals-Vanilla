@@ -37,6 +37,20 @@ bool custom_music_allowed() {
     return !dComIfGs_isEventBit(dSv_event_flag_c::saveBitLabels[104]) ||
            dComIfGs_isEventBit(dSv_event_flag_c::saveBitLabels[250]);
 }
+
+bool global_palace_music_style() {
+    return g_runtime.style == Style::Normal || g_runtime.style == Style::BlackAndWhite;
+}
+}
+
+bool title_or_file_select_active() {
+    // The title actor is present on the title screen, while file select uses
+    // NAME_SCENE/NAMEEX_SCENE and can leave the old gameplay stage name alive.
+    return fpcM_SearchByName(fpcNm_LOGO_SCENE_e) != nullptr ||
+           fpcM_SearchByName(fpcNm_MENU_SCENE_e) != nullptr ||
+           fpcM_SearchByName(fpcNm_TITLE_e) != nullptr ||
+           fpcM_SearchByName(fpcNm_NAME_SCENE_e) != nullptr ||
+           fpcM_SearchByName(fpcNm_NAMEEX_SCENE_e) != nullptr;
 }
 
 const RuntimeSettings& runtime_settings() { return g_runtime; }
@@ -93,8 +107,7 @@ void refresh_runtime_settings() {
     // The global start-stage name survives title/file-select screens. Do not
     // let that stale gameplay name authorize custom music there. Keep the
     // latch across normal room/load-zone gaps, matching the MFB behavior.
-    const bool titleOrFileSelect = dComIfGp_getStage() != nullptr &&
-                                   fopAcM_SearchByName(fpcNm_TITLE_e) != nullptr;
+    const bool titleOrFileSelect = title_or_file_select_active();
     if (titleOrFileSelect) {
         g_musicGameplayReady = false;
         music::suspend();
@@ -170,9 +183,20 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
     (void)layer;
     (void)inDarkness;
 
-    // The scene provider can see the stale start-stage name while the title
-    // actor is active. Require the same gameplay/next-stage context as MFB.
-    if (dComIfGp_getPlayer(0) == nullptr && !dComIfGp_isEnableNextStage()) {
+    const bool globalPalaceMusic = global_palace_music_style();
+    const bool titleOrFileSelect = title_or_file_select_active();
+
+    // Vanilla selects a room's BGM before it creates the player actor. Normal
+    // and Black & White need to participate at that stage-load point, but the
+    // title actor must never inherit the stale gameplay stage name.
+    const bool sceneContextReady = dComIfGp_getPlayer(0) != nullptr ||
+                                   dComIfGp_isEnableNextStage();
+    // Normal and Black & White must also own the scene lookup during the
+    // short load-zone gap where the stage/player pointers are torn down. The
+    // start-stage name remains available there and title/file-select actors
+    // are still an explicit hard boundary.
+    if (titleOrFileSelect ||
+        (!sceneContextReady && (!globalPalaceMusic || !g_musicGameplayReady))) {
         return false;
     }
 
@@ -190,9 +214,6 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
                              sceneNo <= Z2SCENE_PALACE_OF_TWILIGHT_BOSS;
     const bool palaceMusicScene = palaceScene || palaceSpot;
     const bool templeMusicScene = templeScene || palaceMusicScene;
-    const bool globalPalaceMusic = g_runtime.style == Style::Normal ||
-                                   g_runtime.style == Style::BlackAndWhite;
-
     if (!active() || !music_override_allowed() || spot == nullptr ||
         (!globalPalaceMusic && templeMusicScene && !g_runtime.overrideTempleMusic) ||
         (!globalPalaceMusic && !palaceSpot && spot[0] != 'F' && spot[0] != 'R' &&
@@ -236,14 +257,28 @@ bool palace_excluded() {
 }
 
 bool music_override_allowed() {
-    if (!visual_effects_active() || !g_musicGameplayReady || !custom_music_allowed()) return false;
-
     // Normal Twilight and Black & White intentionally use the Palace of
     // Twilight sequence as their global ambient theme. Unlike the streamed
     // Astral/Dark Hour replacements, this is not limited to field/room stage
     // prefixes or the optional temple-music override.
-    if (g_runtime.style == Style::Normal || g_runtime.style == Style::BlackAndWhite)
-        return true;
+    if (!visual_effects_active()) return false;
+    if (global_palace_music_style()) {
+        const bool titleOrFileSelect = title_or_file_select_active();
+        const bool sceneContextReady = dComIfGp_getPlayer(0) != nullptr ||
+                                       dComIfGp_isEnableNextStage();
+        const char* stage = dComIfGp_getStartStageName();
+        const bool gameplayStageKnown = stage != nullptr && *stage != '\0';
+        if (titleOrFileSelect || !gameplayStageKnown ||
+            (!sceneContextReady && !g_musicGameplayReady))
+            return false;
+        // The save/event state is not safe to query until a player exists.
+        // A load-zone transition can have neither pointer ready yet; the
+        // known gameplay start-stage name is the safe transition latch.
+        return !sceneContextReady || dComIfGp_getPlayer(0) == nullptr ||
+               custom_music_allowed();
+    }
+
+    if (!g_musicGameplayReady || !custom_music_allowed()) return false;
 
     const char* stage = dComIfGp_getStartStageName();
     if (stage != nullptr && *stage != '\0') {
