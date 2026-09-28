@@ -122,6 +122,11 @@ void refresh_scene_music_selection(bool replacementWanted, Z2SeqMgr* sequence,
         // The vanilla Palace sequence uses room number as its layer selector:
         // nonzero room values select the interior arrangement. Keep status 0
         // so the exterior Palace arrangement is used everywhere.
+        // A save can leave the cached status at 0 while the newly reused
+        // sequence handle still has combat child-track volumes. The vanilla
+        // implementation returns early for status 0 in that case, so mark
+        // the status as uninitialized before applying the exterior layout.
+        sequence->mBgmStatus = 0xff;
         sequence->changeBgmStatus(0);
         scene->field_0x1a = false;
         scene->setSceneExist(true);
@@ -255,6 +260,7 @@ bool mixHookInstalled = false;
 bool sceneHookInstalled = false;
 bool sceneNameHookInstalled = false;
 bool frameworkHookInstalled = false;
+bool palaceStatusHookInstalled = false;
 JASDriver::MixCallback NativeMixCallback = nullptr;
 std::array<s16, 8192> CompositeMix{};
 std::atomic<bool> sceneStartPending{true};
@@ -419,6 +425,7 @@ DEFINE_HOOK_SYMBOL("Z2SceneMgr::sceneChange",
     void(Z2SceneMgr*, JAISoundID, u8, u8, u8, u8, u8, bool), SceneChange);
 DEFINE_HOOK_SYMBOL("Z2SceneMgr::setSceneName",
     void(Z2SceneMgr*, char*, s32, s32), SetSceneName);
+DEFINE_HOOK_SYMBOL("Z2SeqMgr::changeBgmStatus", void(Z2SeqMgr*, s32), ChangeBgmStatus);
 DEFINE_HOOK_SYMBOL("Z2SeqMgr::processBgmFramework", void(Z2SeqMgr*), ProcessBgmFramework);
 
 HookAction register_mix_pre(ModContext*, void* args, void*, void*) {
@@ -457,13 +464,17 @@ void apply_native_gains(Z2SeqMgr* p) {
     if (!p) return;
     const u32 main = p->getMainBgmID();
     const u32 sub = p->getSubBgmID();
+    const bool globalPalace =
+        (runtime_settings().style == Style::Normal ||
+         runtime_settings().style == Style::BlackAndWhite) &&
+        main == Z2BGM_DUNGEON_LV8;
     float mainGain = 1.0f;
     float subGain = 1.0f;
     if (NativeBgmMute.load() && main != 0xffffffffu && !fanfare(main)) mainGain = 0.0f;
     if (NativeBgmMute.load() && sub != 0xffffffffu && !fanfare(sub)) subGain = 0.0f;
     if (main == Z2BGM_DUNGEON_LV8) mainGain = PalaceGain.load();
     if (sub == Z2BGM_BATTLE_NORMAL || sub == Z2BGM_BATTLE_TWILIGHT)
-        subGain = BattleGain.load();
+        subGain = globalPalace ? 0.0f : BattleGain.load();
     if (is_boss_bgm(main)) mainGain = BossGain.load();
     if (is_boss_bgm(sub)) subGain = BossGain.load();
     if (p->mMainBgmHandle) p->mMainBgmHandle->getAuxiliary().moveVolume(mainGain, 0);
@@ -550,6 +561,39 @@ void scene_name_post(ModContext*, void* args, void*, void*) {
     }
     sceneStartPending.store(true, std::memory_order_relaxed);
 }
+
+HookAction change_bgm_status_pre(ModContext*, void* args, void*, void*) {
+    auto* sequence = mods::arg<Z2SeqMgr*>(args, 0);
+    auto& status = mods::arg_ref<s32>(args, 1);
+    const bool globalPalace = runtime_settings().style == Style::Normal ||
+                              runtime_settings().style == Style::BlackAndWhite;
+    const char* stage = dComIfGp_getStartStageName();
+    const bool gameplayStageKnown = stage != nullptr && *stage != '\0';
+    if (sequence != nullptr && globalPalace && active() && gameplayStageKnown &&
+        !title_or_file_select_active()) {
+        static s32 lastLoggedStatus = -1;
+        if (status != 0 && status != lastLoggedStatus) {
+            lastLoggedStatus = status;
+            char message[160]{};
+            std::snprintf(message, sizeof(message),
+                "PalaceStatusOverride requested=%d stage=%s main=%08x",
+                static_cast<int>(status), stage,
+                static_cast<unsigned>(sequence->getMainBgmID()));
+            svc_log->info(mod_ctx, message);
+        }
+        // The Palace hand uses statuses 100+ to select its combat layers.
+        // Global Palace music must remain on the exterior arrangement.
+        // If a save restored the exterior status byte while leaving the child
+        // tracks in the hand mix, vanilla's same-status early return would
+        // skip the volume reset. Force one real status transition so vanilla
+        // reapplies all Palace child-track volumes.
+        if (status != 0 && sequence->mBgmStatus == 0) {
+            sequence->mBgmStatus = 0xff;
+        }
+        status = 0;
+    }
+    return HOOK_CONTINUE;
+}
 }
 bool is_boss_bgm(u32 id) {
     switch (id) {
@@ -608,6 +652,12 @@ ModResult initialize() {
         return MOD_UNSUPPORTED;
     if (mods::hook::add_post<ProcessBgmFramework>(framework_post) == MOD_OK)
         frameworkHookInstalled = true;
+    if (mods::hook::add_pre<ChangeBgmStatus>(change_bgm_status_pre) == MOD_OK) {
+        palaceStatusHookInstalled = true;
+        svc_log->info(mod_ctx, "Palace status override hook active");
+    } else {
+        svc_log->warn(mod_ctx, "Palace status override hook unavailable");
+    }
     // Bind the same exported state read by DuskAudioSystem::RenderAudioSubframe.
     // Calling registerMixCallback alone is insufficient when another subsystem
     // has already cached/replaced the external callback during initialization.
@@ -731,6 +781,7 @@ void update_from_manager(Z2SeqMgr* p) {
 }
 void shutdown() {
     if (frameworkHookInstalled) { mods::hook::uninstall<ProcessBgmFramework>(); frameworkHookInstalled = false; }
+    if (palaceStatusHookInstalled) { mods::hook::uninstall<ChangeBgmStatus>(); palaceStatusHookInstalled = false; }
     if (sceneHookInstalled) { mods::hook::uninstall<SceneChange>(); sceneHookInstalled = false; }
     if (sceneNameHookInstalled) { mods::hook::uninstall<SetSceneName>(); sceneNameHookInstalled = false; }
     if (mixHookInstalled) {
