@@ -41,7 +41,7 @@ constexpr std::array<const char*, 9> kWeather{
     "Current", "Clear", "Rain", "Snow", "Lightning", "Wind Storm", "Snow Storm",
     "Heavy Fog", "Blood Rain"};
 constexpr std::array<const char*, 4> kBloomModes{
-    "Native Dusklight", "Off", "Classic (MFB)", "Dusklight"};
+    "Off (No Override)", "No Bloom", "Nvidia Shield", "Dusklight"};
 constexpr std::array<const char*, 4> kMenuScalingModes{
     "Native Dusklight", "GameCube (MFB)", "Wii (MFB)", "Dusklight (MFB)"};
 constexpr std::array<const char*, 2> kLoadModes{"Normal", "Fast Loads (MFB)"};
@@ -141,6 +141,16 @@ void add_hotkey_button(UiElementHandle pane, HotkeyButtonContext& context, const
     control.on_pressed = begin_hotkey_binding;
     control.user_data = &context;
     svc_ui->pane_add_control(mod_ctx, pane, &control, &context.control);
+}
+
+ModResult build_hotkeys_group(ModContext*, UiElementHandle pane, void*, ModError*) {
+    const char* help =
+        "Select, release the activating input, then press any keyboard key or controller button. "
+        "Press Escape to clear the binding.";
+    add_hotkey_button(pane, g_hotkeyButtons[0], help);
+    add_hotkey_button(pane, g_hotkeyButtons[1], help);
+    add_hotkey_button(pane, g_hotkeyButtons[2], help);
+    return MOD_OK;
 }
 
 void add_toggle(UiElementHandle pane, const char* label, const char* help, ConfigVarHandle var) {
@@ -300,26 +310,17 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     add_toggle(left, "Exclude Palace of Twilight",
         "Keep the Palace of Twilight's native visuals and music instead of applying the selected "
         "Twilight Visuals preset.", g_settings.excludePalaceOfTwilight);
+    add_select(left, "Weather", "Override weather independently from the visual toggle.",
+        g_settings.weather, kWeather);
 
     svc_ui->pane_add_section(mod_ctx, left, "Music");
     add_number(left, "Custom Music Volume",
         "Adjust Astral Plane and Dark Hour replacement music volume.",
         g_settings.musicVolume, 0, 100, 5, "%");
-    add_select(left, "Bloom Override Mode",
-        "Choose the bloom implementation used by Twilight Visuals. Native Dusklight leaves "
-        "Dusklight's own bloom setting in control.",
-        g_settings.bloomMode, kBloomModes);
-    add_number(left, "Bloom Brightness",
-        "Adjust the MFB bloom brightness multiplier independently from scene brightness.",
-        g_settings.bloomBrightness, 0, 100, 10, "%");
     add_toggle(left, "Override Temple Music",
         "Use the selected visual preset's music in temples and dungeons when custom music support "
         "is available. Boss and miniboss themes remain unchanged.",
         g_settings.overrideTempleMusic);
-
-    svc_ui->pane_add_section(mod_ctx, left, "Weather");
-    add_select(left, "Weather", "Override weather independently from the visual toggle.",
-        g_settings.weather, kWeather);
 
     svc_ui->pane_add_section(mod_ctx, left, "Movement");
     add_toggle(left, "Skyward Sword Running",
@@ -335,9 +336,16 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         g_settings.skywardSwordWallRunning);
     add_toggle(left, "Wolf Senses as Human",
         "Press D-pad Down as human Link to toggle Wolf Senses after the ability has been unlocked.",
-        g_settings.humanWolfSenses);
+    g_settings.humanWolfSenses);
 
-    svc_ui->pane_add_section(mod_ctx, left, "Loading");
+    svc_ui->pane_add_section(mod_ctx, left, "MFB Settings");
+    add_select(left, "Bloom Override Mode",
+        "Choose the bloom implementation used by Twilight Visuals. Native Dusklight leaves "
+        "Dusklight's own bloom setting in control.",
+        g_settings.bloomMode, kBloomModes);
+    add_number(left, "Bloom Brightness",
+        "Adjust the MFB bloom brightness multiplier independently from scene brightness.",
+        g_settings.bloomBrightness, 0, 100, 10, "%");
     add_select(left, "Load Mode",
         "Normal keeps vanilla transitions. Fast shortens area-transition waits and processes "
         "more loading work per frame. Reset, title, and protected story transitions stay "
@@ -345,7 +353,6 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "requires engine-side actor and frame-pump changes that vanilla hooks cannot add safely.",
         g_settings.loadMode, kLoadModes);
 
-    svc_ui->pane_add_section(mod_ctx, left, "Interface");
     add_toggle(left, "Hide Mouse Cursor During Gameplay",
         "Hide the mouse cursor while no Dusklight or in-game menu is visible. The cursor is "
         "restored whenever a menu opens.", g_settings.hideGameplayCursor);
@@ -358,14 +365,10 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Open the bottom-screen facial-expression tuner. It includes Automatic plus every "
         "vanilla human and wolf daAlink_FTANM expression.",
         open_face_tuner);
-
-    svc_ui->pane_add_section(mod_ctx, left, "Hotkeys");
-    add_hotkey_button(left, g_hotkeyButtons[0],
-        "Select, release the activating input, then press any keyboard key or controller button. Press Escape to clear the binding.");
-    add_hotkey_button(left, g_hotkeyButtons[1],
-        "Select, release the activating input, then press any keyboard key or controller button. Press Escape to clear the binding.");
-    add_hotkey_button(left, g_hotkeyButtons[2],
-        "Select, release the activating input, then press any keyboard key or controller button. Press Escape to clear the binding.");
+    UiGroupDesc hotkeys = UI_GROUP_DESC_INIT;
+    hotkeys.label = "Hotkeys";
+    hotkeys.build = build_hotkeys_group;
+    svc_ui->pane_add_group(mod_ctx, left, right, &hotkeys, nullptr);
     return MOD_OK;
 }
 
