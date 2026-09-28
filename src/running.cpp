@@ -84,8 +84,14 @@ bool indoor_stage() {
     return type == ST_ROOM || type == ST_DUNGEON || type == ST_BOSS_ROOM;
 }
 bool sand_surface(daAlink_c* p) {
-    return p != nullptr && p->mLinkAcch.ChkGroundHit() &&
-           p->mGndPolyAtt0 == 3 && !p->checkSnowCode();
+    if (p == nullptr || !p->mLinkAcch.ChkGroundHit() ||
+        p->mGndPolyAtt0 != 3 || p->checkSnowCode()) {
+        return false;
+    }
+    // Gerudo Desert uses the same sand polygon attribute as other sand
+    // surfaces, but its outdoor movement should keep normal sprint speed.
+    const char* stage = dComIfGp_getStartStageName();
+    return stage == nullptr || std::strcmp(stage, "F_SP124") != 0;
 }
 f32 run_speed(daAlink_c* p) {
     const bool dungeon = dungeon_stage();
