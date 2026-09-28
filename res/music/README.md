@@ -1,27 +1,23 @@
 # Custom music for Twilight Visuals (vanilla Dusklight)
 
-You can either bundle Nintendo AST stream files in this directory, or supply
-them externally. External files are not packaged into the `.dusk` archive.
+This directory only documents the external music files. They are not bundled
+inside the `.dusk` archive and are not loaded from this `res/music` directory.
 
-For external use, place the files in a `music` or `external_music` folder in
-one of these locations:
+Place the MP3 files beside the Dusklight executable:
 
-- the build/run working directory, such as `build-latest/music`
-- the extracted mod package directory or its native runtime directory
-- Dusklight's current working directory
-- the mod's Dusklight data directory
+- Windows: beside `Dusklight.exe`
+- macOS: beside `Dusklight.app/Contents/MacOS/Dusklight`
 
-Use these exact names:
+Use these exact filenames:
 
-- `astral_plane.ast`
-- `astral_plane_combat.ast`
-- `dark_hour.ast`
-- `dark_hour_combat.ast`
+- `Astral Plane.mp3` — Astral Plane ambient music
+- `Astral Plane CM.mp3` — Astral Plane ordinary combat music
+- `tartarus 0d06.mp3` — The Dark Hour ambient music
+- `Mass Destruction.mp3` — The Dark Hour ordinary combat music
+- `Master of Shadow.mp3` — optional boss music replacement
 
-The vanilla Dusklight audio service does not accept MP3 files. The old MFB
-mixing path is intentionally not used here. AST files are registered through
-Dusklight's official `AudioResService` and mounted through `OverlayService`.
-
-The current vanilla integration replaces the scene/ambient track. Native
-battle and fanfare bookkeeping remains owned by Dusklight until a supported
-battle-track provider exists.
+Restart Dusklight after adding or replacing files. In the Twilight Visuals
+settings, select `Astral Plane` or `The Dark Hour` under `Visual Style & Music`.
+Use `Custom Music Volume` for the replacement volume and enable `Override
+Temple Music` for temple and dungeon scenes. Missing or unsupported files are
+reported in the Dusklight log.

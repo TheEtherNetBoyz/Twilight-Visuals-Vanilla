@@ -8,10 +8,37 @@ host, and does not modify `aurora`.
 The port keeps the visual and gameplay work that can be implemented directly in
 vanilla Dusklight: settings/quick menu, environment and post-processing hooks,
 weather and particle effects, sky palette decoding, monochrome rendering,
-Dark Hour styling, and Skyward Sword running hooks. Custom music uses the
-official Dusklight `AudioResService`/`OverlayService` path and accepts bundled
-Nintendo AST streams in `res/music/`; the MFB-only MP3 mixer and host callback
-registries are not used.
+Dark Hour styling, and Skyward Sword running hooks. Custom music is streamed
+from external MP3 files by the mod's native audio mixer.
+
+## Custom music
+
+The music files are not stored inside the `.dusk` archive. Place them in the
+same directory as the Dusklight executable:
+
+- Windows: beside `Dusklight.exe`
+- macOS: beside the app executable at `Dusklight.app/Contents/MacOS/`
+
+Use these exact filenames:
+
+| File | Used for |
+| --- | --- |
+| `Astral Plane.mp3` | Astral Plane ambient music |
+| `Astral Plane CM.mp3` | Astral Plane ordinary combat music |
+| `tartarus 0d06.mp3` | The Dark Hour ambient music |
+| `Mass Destruction.mp3` | The Dark Hour ordinary combat music |
+| `Master of Shadow.mp3` | Optional boss music replacement |
+
+After adding or replacing files, restart Dusklight so the mod can reload them.
+Then open the Twilight Visuals settings and select `Astral Plane` or `The Dark
+Hour` under `Visual Style & Music`. Use `Custom Music Volume` to adjust the
+replacement volume. Enable `Override Temple Music` if the selected custom
+style should also replace music in temples and dungeons; the Palace exclusion
+setting still takes precedence.
+
+`Normal Twilight` and `Black and White` use the Palace of Twilight sequence
+instead of these MP3 replacements. Missing or unsupported files are reported
+in the Dusklight log and the corresponding replacement track will not play.
 
 ## Build
 
