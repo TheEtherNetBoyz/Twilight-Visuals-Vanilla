@@ -1,6 +1,5 @@
 #include "postprocess.hpp"
 #include "runtime.hpp"
-#include "sky.hpp"
 #include "mods/service.hpp"
 #include "hook_api.hpp"
 #include "d/d_com_inf_game.h"
@@ -216,15 +215,9 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
         return HOOK_CONTINUE;
     }
 
-    // Normal Twilight must use the stage-authored layer-14 bloom exactly as
-    // vanilla does. The custom bloom selector is still useful for Dark Hour
-    // and for fallback maps without a complete Twilight environment, but
-    // applying it here to an authored room is what made areas such as
-    // Kakariko visibly brighter and softer than native Twilight.
-    if (runtime_settings().style == Style::Normal &&
-        dComIfG_play_c::getLayerNo(0) != 14 && sky::has_layer(14, 10)) {
-        return HOOK_CONTINUE;
-    }
+    // The bloom selector is intentionally applied even when Normal Twilight
+    // is using an authored layer-14 environment. This lets the override be
+    // tested consistently in areas such as Kakariko as well as fallback maps.
 
     BloomMode mode = runtime_settings().bloomMode;
     // Preserve the old config variable for users upgrading from the first vanilla port.
