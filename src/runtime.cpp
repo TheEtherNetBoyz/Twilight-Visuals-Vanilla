@@ -190,10 +190,12 @@ bool provide_scene_music(const char* spot, s32 room, s32 layer, s32 sceneNo,
                              sceneNo <= Z2SCENE_PALACE_OF_TWILIGHT_BOSS;
     const bool palaceMusicScene = palaceScene || palaceSpot;
     const bool templeMusicScene = templeScene || palaceMusicScene;
+    const bool globalPalaceMusic = g_runtime.style == Style::Normal ||
+                                   g_runtime.style == Style::BlackAndWhite;
 
     if (!active() || !music_override_allowed() || spot == nullptr ||
-        (templeMusicScene && !g_runtime.overrideTempleMusic) ||
-        (!palaceSpot && spot[0] != 'F' && spot[0] != 'R' &&
+        (!globalPalaceMusic && templeMusicScene && !g_runtime.overrideTempleMusic) ||
+        (!globalPalaceMusic && !palaceSpot && spot[0] != 'F' && spot[0] != 'R' &&
             !(g_runtime.overrideTempleMusic && templeMusicScene)) ||
         (demoWave != 0 && sceneNo != Z2SCENE_KAKARIKO_VILLAGE)) {
         return false;
@@ -235,6 +237,13 @@ bool palace_excluded() {
 
 bool music_override_allowed() {
     if (!visual_effects_active() || !g_musicGameplayReady || !custom_music_allowed()) return false;
+
+    // Normal Twilight and Black & White intentionally use the Palace of
+    // Twilight sequence as their global ambient theme. Unlike the streamed
+    // Astral/Dark Hour replacements, this is not limited to field/room stage
+    // prefixes or the optional temple-music override.
+    if (g_runtime.style == Style::Normal || g_runtime.style == Style::BlackAndWhite)
+        return true;
 
     const char* stage = dComIfGp_getStartStageName();
     if (stage != nullptr && *stage != '\0') {

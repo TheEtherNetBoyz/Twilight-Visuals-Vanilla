@@ -11,6 +11,7 @@
 #include "f_op/f_op_actor_mng.h"
 #include "f_pc/f_pc_name.h"
 #include "m_Do/m_Do_Reset.h"
+#include "m_Do/m_Do_audio.h"
 #include "mods/svc/hook.hpp"
 #include "Z2AudioLib/Z2Param.h"
 #include "Z2AudioLib/Z2SeqMgr.h"
@@ -40,6 +41,67 @@ bool init_mp3(drmp3* decoder, const std::filesystem::path& path) {
     return drmp3_init_file(decoder,
         reinterpret_cast<const char*>(utf8_path.c_str()), nullptr) != 0;
 #endif
+}
+
+Z2SceneMgr* LiveSceneManager = nullptr;
+bool sceneSelectionKnown = false;
+bool previousReplacementSelection = false;
+
+void refresh_scene_music_selection(bool replacementWanted, Z2SeqMgr* sequence,
+                                   Z2StatusMgr* status) {
+    Z2SceneMgr* scene = LiveSceneManager ? LiveSceneManager : Z2GetSceneMgr();
+    if (!sequence || !status || !scene ||
+        !scene->isSceneExist() || dComIfGp_isEnableNextStage() ||
+        status->getDemoStatus() != 0 || dComIfGp_event_runCheck()) {
+        return;
+    }
+
+    const bool palacePlaying = sequence->getMainBgmID() == Z2BGM_DUNGEON_LV8;
+    const bool selectionChanged = !sceneSelectionKnown ||
+                                  replacementWanted != previousReplacementSelection;
+    if (!selectionChanged && (!replacementWanted || palacePlaying)) return;
+    if (replacementWanted && palacePlaying) {
+        sceneSelectionKnown = true;
+        previousReplacementSelection = true;
+        return;
+    }
+
+    const char* stage = dComIfGp_getStartStageName();
+    if (!stage || !*stage) return;
+    const s8 room = dComIfGp_roomControl_getStayNo();
+    const s8 layer = dComIfG_play_c::getLayerNo_common(
+        stage, room, dComIfGp_getStartStageLayer());
+
+    if (replacementWanted) {
+        // Do not depend on the provider being consulted during an in-place
+        // settings refresh. Some vanilla builds keep the existing scene
+        // selection and bypass that callback. Program the same native Palace
+        // sequence and wave bank that Palace of Twilight itself requests.
+        scene->sceneChange(JAISoundID(Z2BGM_DUNGEON_LV8),
+            scene->requestSeWave_1, scene->requestSeWave_2,
+            0x28, 0, scene->requestDemoWave, false);
+    } else {
+        // Disabling the replacement must restore the room's authored BGM and
+        // wave banks, so run the complete vanilla scene lookup in that case.
+        mDoAud_setSceneName(stage, room, layer);
+    }
+    scene->timer = 0;
+    scene->setSceneExist(false);
+    if (scene->load1stWait == 0)
+        scene->_load1stWaveInner_1();
+    mDoAud_zelAudio_c::onBgmSet();
+
+    sceneSelectionKnown = true;
+    previousReplacementSelection = replacementWanted;
+
+    char message[192]{};
+    std::snprintf(message, sizeof(message),
+        "SceneMusicRefresh wanted=%d bgm=%08x wave1=%u room=%d layer=%d",
+        replacementWanted ? 1 : 0,
+        static_cast<unsigned>(static_cast<u32>(scene->BGM_ID)),
+        static_cast<unsigned>(scene->requestBgmWave_1),
+        static_cast<int>(room), static_cast<int>(layer));
+    svc_log->info(mod_ctx, message);
 }
 
 struct Track {
@@ -144,6 +206,7 @@ std::atomic<u32> BossNativeMain{0xffffffff}, BossNativeSub{0xffffffff};
 bool registered = false;
 bool mixHookInstalled = false;
 bool sceneHookInstalled = false;
+bool sceneNameHookInstalled = false;
 bool frameworkHookInstalled = false;
 JASDriver::MixCallback NativeMixCallback = nullptr;
 std::array<s16, 8192> CompositeMix{};
@@ -307,6 +370,8 @@ DEFINE_HOOK_SYMBOL("JASDriver::registerMixCallback",
     void(JASDriver::MixCallback, JASMixMode), RegisterMixCallback);
 DEFINE_HOOK_SYMBOL("Z2SceneMgr::sceneChange",
     void(Z2SceneMgr*, JAISoundID, u8, u8, u8, u8, u8, bool), SceneChange);
+DEFINE_HOOK_SYMBOL("Z2SceneMgr::setSceneName",
+    void(Z2SceneMgr*, char*, s32, s32), SetSceneName);
 DEFINE_HOOK_SYMBOL("Z2SeqMgr::processBgmFramework", void(Z2SeqMgr*), ProcessBgmFramework);
 
 HookAction register_mix_pre(ModContext*, void* args, void*, void*) {
@@ -366,6 +431,7 @@ void framework_post(ModContext*, void* args, void*, void*) {
 
 HookAction scene_change_pre(ModContext*, void* args, void*, void*) {
     auto* scene = mods::arg<Z2SceneMgr*>(args, 0);
+    LiveSceneManager = scene;
     auto& bgm = mods::arg_ref<JAISoundID>(args, 1);
     auto& wave1 = mods::arg_ref<u8>(args, 4);
     auto& wave2 = mods::arg_ref<u8>(args, 5);
@@ -386,6 +452,37 @@ HookAction scene_change_pre(ModContext*, void* args, void*, void*) {
         sceneStartPending.store(true);
     }
     return HOOK_CONTINUE;
+}
+
+void scene_name_post(ModContext*, void* args, void*, void*) {
+    auto* scene = mods::arg<Z2SceneMgr*>(args, 0);
+    if (!scene) return;
+    LiveSceneManager = scene;
+
+    const char* stage = mods::arg<char*>(args, 1);
+    const s32 room = mods::arg<s32>(args, 2);
+    const s32 layer = mods::arg<s32>(args, 3);
+    u32 id = static_cast<u32>(scene->BGM_ID);
+    u8 wave1 = scene->requestBgmWave_1;
+    u8 wave2 = scene->requestBgmWave_2;
+    bool streams = false, field = false;
+    s32 status = -1;
+    if (!provide_scene_music(stage, room, layer, scene->getCurrentSceneNum(),
+            scene->isInDarkness(), scene->requestDemoWave, &id, &wave1, &wave2,
+            &streams, &field, &status)) {
+        return;
+    }
+
+    // setSceneName has now finished vanilla's complete stage lookup. Apply the
+    // replacement here, where the live scene object and wave requests are
+    // authoritative, rather than relying solely on a sceneChange pre-hook
+    // that is unavailable in some vanilla Dusklight builds.
+    if (static_cast<u32>(scene->BGM_ID) != id ||
+        scene->requestBgmWave_1 != wave1 || scene->requestBgmWave_2 != wave2) {
+        scene->sceneChange(JAISoundID(id), scene->requestSeWave_1,
+            scene->requestSeWave_2, wave1, wave2, scene->requestDemoWave, false);
+    }
+    sceneStartPending.store(true, std::memory_order_relaxed);
 }
 }
 bool is_boss_bgm(u32 id) {
@@ -439,6 +536,10 @@ ModResult initialize() {
     mixHookInstalled = true;
     if (mods::hook::add_pre<SceneChange>(scene_change_pre) == MOD_OK)
         sceneHookInstalled = true;
+    if (mods::hook::add_post<SetSceneName>(scene_name_post) == MOD_OK)
+        sceneNameHookInstalled = true;
+    if (!sceneHookInstalled && !sceneNameHookInstalled)
+        return MOD_UNSUPPORTED;
     if (mods::hook::add_post<ProcessBgmFramework>(framework_post) == MOD_OK)
         frameworkHookInstalled = true;
     // Bind the same exported state read by DuskAudioSystem::RenderAudioSubframe.
@@ -466,6 +567,7 @@ void suspend() {
     customOwnership.store(false, std::memory_order_relaxed);
     explicitlySuspended.store(true, std::memory_order_relaxed);
     sceneStartPending.store(true);
+    sceneSelectionKnown = false;
 }
 void sequence(bool scene, bool eligible, int mode, float gain, bool scope, bool battle,
               float battleVolume, bool boss, float bossVolume, u32 bossMain, u32 bossSub) {
@@ -487,6 +589,7 @@ void update_from_manager(Z2SeqMgr* p) {
     const u32 sub = p->getSubBgmID();
     const bool ordinary = sub == Z2BGM_BATTLE_NORMAL || sub == Z2BGM_BATTLE_TWILIGHT;
     const bool rawEnabled = active() && music_override_allowed();
+    refresh_scene_music_selection(rawEnabled, p, status);
     const bool customStyle = runtime_settings().style == Style::AstralPlane ||
                              runtime_settings().style == Style::DarkHour;
     const bool playerExists = dComIfGp_getPlayer(0) != nullptr;
@@ -559,6 +662,7 @@ void update_from_manager(Z2SeqMgr* p) {
 void shutdown() {
     if (frameworkHookInstalled) { mods::hook::uninstall<ProcessBgmFramework>(); frameworkHookInstalled = false; }
     if (sceneHookInstalled) { mods::hook::uninstall<SceneChange>(); sceneHookInstalled = false; }
+    if (sceneNameHookInstalled) { mods::hook::uninstall<SetSceneName>(); sceneNameHookInstalled = false; }
     if (mixHookInstalled) {
         mods::hook::uninstall<RegisterMixCallback>();
         mixHookInstalled = false;
@@ -587,5 +691,8 @@ void shutdown() {
     NativeBgmMute.store(false);
     customOwnership.store(false, std::memory_order_relaxed);
     explicitlySuspended.store(false, std::memory_order_relaxed);
+    LiveSceneManager = nullptr;
+    sceneSelectionKnown = false;
+    previousReplacementSelection = false;
 }
 }

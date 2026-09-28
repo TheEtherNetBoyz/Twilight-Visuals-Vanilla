@@ -88,8 +88,11 @@ bool sand_surface(daAlink_c* p) {
            p->mGndPolyAtt0 == 3 && !p->checkSnowCode();
 }
 f32 run_speed(daAlink_c* p) {
-    const f32 baseSpeed = dungeon_stage() ? 34.0f : 37.0f;
-    const f32 indoorScale = indoor_stage() ? 0.75f : 1.0f;
+    const bool dungeon = dungeon_stage();
+    const f32 baseSpeed = dungeon ? 34.0f : 37.0f;
+    // Dungeon sprint speed is uniform across indoor and open-air rooms.
+    // Keep the reduced indoor speed only for ordinary building interiors.
+    const f32 indoorScale = !dungeon && indoor_stage() ? 0.75f : 1.0f;
     const bool slowed = p->checkEquipHeavyBoots() || sand_surface(p);
     return baseSpeed * indoorScale * (slowed ? 0.70f : 1.0f);
 }
