@@ -107,6 +107,8 @@ void add_control(UiElementHandle pane, UiControlDesc& control) {
 }
 
 void open_face_tuner(ModContext*, void*);
+void get_dark_hour_fog_value(ModContext*, void*, UiControlValue* outValue);
+void adjust_dark_hour_fog_value(ModContext*, void*, const UiControlValue* value);
 
 void add_button(UiElementHandle pane, const char* label, const char* help,
     UiPressedFn onPressed) {
@@ -189,6 +191,23 @@ void add_number(UiElementHandle pane, const char* label, const char* help, Confi
     control.max = max;
     control.step = step;
     control.suffix = suffix;
+    add_control(pane, control);
+}
+
+void add_dark_hour_fog_tuner(UiElementHandle pane) {
+    UiControlDesc control = UI_CONTROL_DESC_INIT;
+    control.kind = UI_CONTROL_NUMBER;
+    control.label = "Dark Hour Foreground Visibility";
+    control.help_rml =
+        "Controls how far foreground terrain remains visible during The Dark Hour. "
+        "Adjust this setting to open the full-screen graphics tuner.";
+    control.binding = UI_BINDING_CALLBACKS;
+    control.get = get_dark_hour_fog_value;
+    control.set = adjust_dark_hour_fog_value;
+    control.min = 0;
+    control.max = 200;
+    control.step = 5;
+    control.suffix = "%";
     add_control(pane, control);
 }
 
@@ -346,6 +365,7 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     add_number(left, "Bloom Brightness",
         "Adjust the MFB bloom brightness multiplier independently from scene brightness.",
         g_settings.bloomBrightness, 0, 100, 10, "%");
+    add_dark_hour_fog_tuner(left);
     add_select(left, "Load Mode",
         "Normal keeps vanilla transitions. Fast shortens area-transition waits and processes "
         "more loading work per frame. Reset, title, and protected story transitions stay "
@@ -430,6 +450,20 @@ void open_face_tuner(ModContext*, void*) {
     native_face_tuner::open();
 }
 
+void get_dark_hour_fog_value(ModContext*, void*, UiControlValue* outValue) {
+    if (outValue == nullptr) return;
+    outValue->int_value = std::clamp<int64_t>(
+        get_int(g_settings.darkHourFogStart, 0), 0, 200);
+}
+
+void adjust_dark_hour_fog_value(ModContext*, void*, const UiControlValue* value) {
+    if (value != nullptr) {
+        svc_config->set_int(mod_ctx, g_settings.darkHourFogStart,
+            std::clamp<int64_t>(value->int_value, 0, 200));
+    }
+    native_face_tuner::open_dark_hour_fog();
+}
+
 }  // namespace
 
 Settings& settings() { return g_settings; }
@@ -482,6 +516,8 @@ ModResult register_settings(ModError*) {
     result = register_int("bloom-mode", 0, g_settings.bloomMode);
     if (result != MOD_OK) return result;
     result = register_int("bloom-brightness", 100, g_settings.bloomBrightness);
+    if (result != MOD_OK) return result;
+    result = register_int("dark-hour-fog-start", 0, g_settings.darkHourFogStart);
     if (result != MOD_OK) return result;
     result = register_bool("legacy-bloom", false, g_settings.legacyBloom);
     if (result != MOD_OK) return result;

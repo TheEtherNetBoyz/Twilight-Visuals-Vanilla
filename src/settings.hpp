@@ -18,6 +18,7 @@ struct Settings {
     ConfigVarHandle musicVolume{};
     ConfigVarHandle bloomMode{};
     ConfigVarHandle bloomBrightness{};
+    ConfigVarHandle darkHourFogStart{};
     ConfigVarHandle legacyBloom{};
     ConfigVarHandle overrideTempleMusic{};
     ConfigVarHandle skywardSwordRunning{};

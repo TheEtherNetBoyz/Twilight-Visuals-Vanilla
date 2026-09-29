@@ -25,6 +25,7 @@ struct RuntimeSettings {
     int chromaticAberration{80}; Skybox skybox{Skybox::TwilightDay};
     Weather weather{Weather::Current}; float musicVolume{1.0f};
     BloomMode bloomMode{BloomMode::Native}; float bloomBrightness{1.0f};
+    float darkHourFogStart{};
     bool legacyBloom{};
     bool overrideTempleMusic{};
     bool skywardSwordRunning{};

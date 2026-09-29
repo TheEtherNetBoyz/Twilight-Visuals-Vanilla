@@ -20,6 +20,7 @@ namespace {
 using namespace dusk::ui;
 
 constexpr auto kFaceOption = static_cast<GraphicsOption>(7);
+constexpr auto kDarkHourFogOption = static_cast<GraphicsOption>(8);
 using ConstructorFn = void (*)(GraphicsTuner*, GraphicsTunerProps);
 using PushDocumentFn = Document* (*)(std::unique_ptr<Document>, bool, bool);
 using RefreshFn = void (*)(SteppedCarousel*);
@@ -85,6 +86,20 @@ Rml::String label_face(int value) {
 
 bool modified_face() { return read_face() != 0; }
 
+int read_dark_hour_fog() {
+    int64_t value = 0;
+    svc_config->get_int(mod_ctx, settings().darkHourFogStart, &value);
+    return static_cast<int>(std::clamp<int64_t>(value, 0, 200));
+}
+
+void write_dark_hour_fog(int value) {
+    svc_config->set_int(mod_ctx, settings().darkHourFogStart, std::clamp(value, 0, 200));
+}
+
+Rml::String label_percent(int value) { return std::to_string(std::clamp(value, 0, 200)) + "%"; }
+
+bool modified_dark_hour_fog() { return read_dark_hour_fog() != 0; }
+
 GraphicsSetting gFaceSetting{
     .min = 0, .max = 163, .defaultValue = 0, .step = 1,
     .watchesRenderSize = false, .read = read_face, .write = write_face,
@@ -93,9 +108,30 @@ GraphicsSetting gFaceSetting{
 };
 
 HookAction setting_pre(ModContext*, void* args, void* retval, void*) {
-    if (mods::arg<GraphicsOption>(args, 0) != kFaceOption) return HOOK_CONTINUE;
-    *static_cast<const GraphicsSetting**>(retval) = &gFaceSetting;
-    return HOOK_SKIP_ORIGINAL;
+    const auto option = mods::arg<GraphicsOption>(args, 0);
+    if (option == kFaceOption) {
+        *static_cast<const GraphicsSetting**>(retval) = &gFaceSetting;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    if (option == kDarkHourFogOption) {
+        static const GraphicsSetting setting{
+            .min = 0,
+            .max = 200,
+            .defaultValue = 0,
+            .step = 5,
+            .watchesRenderSize = false,
+            .read = read_dark_hour_fog,
+            .write = write_dark_hour_fog,
+            .label = label_percent,
+            .cvarName = []() -> const char* {
+                return "mod.dev_twilitrealm_twilight__visuals__vanilla.dark-hour-fog-start";
+            },
+            .isModified = modified_dark_hour_fog,
+        };
+        *static_cast<const GraphicsSetting**>(retval) = &setting;
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
 }
 
 void carousel_post(ModContext*, void* args, void*, void*) {
@@ -116,33 +152,64 @@ ModResult initialize() {
     gCarouselHook = true;
 
     void* fn = nullptr;
+#if defined(__APPLE__)
+    if (!resolve("_ZN4dusk2ui13GraphicsTunerC1ENS0_18GraphicsTunerPropsE", &fn))
+        return MOD_UNAVAILABLE;
+#else
     if (!resolve("dusk::ui::GraphicsTuner::GraphicsTuner", &fn)) return MOD_UNAVAILABLE;
+#endif
     gConstructor = reinterpret_cast<ConstructorFn>(fn);
     fn = nullptr;
+#if defined(__APPLE__)
+    if (!resolve(
+            "_ZN4dusk2ui13push_documentENSt3__110unique_ptrINS0_8DocumentENS1_14default_deleteIS3_EEEEbb",
+            &fn))
+        return MOD_UNAVAILABLE;
+#else
     if (!resolve("dusk::ui::push_document", &fn)) return MOD_UNAVAILABLE;
+#endif
     gPushDocument = reinterpret_cast<PushDocumentFn>(fn);
     fn = nullptr;
+#if defined(__APPLE__)
+    if (!resolve("_ZN4dusk2ui15SteppedCarousel7refreshEv", &fn)) return MOD_UNAVAILABLE;
+#else
     if (!resolve("dusk::ui::SteppedCarousel::refresh", &fn)) return MOD_UNAVAILABLE;
+#endif
     gRefresh = reinterpret_cast<RefreshFn>(fn);
     fn = nullptr;
+#if defined(__APPLE__)
+    if (!resolve("_ZN4dusk2ui12top_documentEv", &fn)) return MOD_UNAVAILABLE;
+#else
     if (!resolve("dusk::ui::top_document", &fn)) return MOD_UNAVAILABLE;
+#endif
     gTopDocument = reinterpret_cast<TopDocumentFn>(fn);
     return MOD_OK;
 }
 
-void open() {
+void open_tuner(GraphicsOption option, const char* title, const char* helpText) {
     if (gConstructor == nullptr || gPushDocument == nullptr || gTopDocument == nullptr) return;
     void* memory = ::operator new(sizeof(GraphicsTuner));
     auto* tuner = static_cast<GraphicsTuner*>(memory);
     gConstructor(tuner, GraphicsTunerProps{
-        .option = kFaceOption,
-        .title = "Facial Expression",
-        .helpText = "Override Link's facial expression. Automatic returns control to the game. "
-                    "Human and wolf entries apply to their matching form.",
+        .option = option,
+        .title = title,
+        .helpText = helpText,
     });
     std::unique_ptr<Document> document(tuner);
     if (auto* current = gTopDocument()) current->cover();
     gPushDocument(std::move(document), true, false);
+}
+
+void open() {
+    open_tuner(kFaceOption, "Facial Expression",
+        "Override Link's facial expression. Automatic returns control to the game. "
+        "Human and wolf entries apply to their matching form.");
+}
+
+void open_dark_hour_fog() {
+    open_tuner(kDarkHourFogOption, "Dark Hour Foreground Visibility",
+        "Adjust how far the Dark Hour foreground remains visible around Link. Higher values "
+        "push the terrain fog farther away while preserving the distant darkness.");
 }
 
 void shutdown() {

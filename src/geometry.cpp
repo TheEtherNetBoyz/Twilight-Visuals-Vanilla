@@ -228,7 +228,11 @@ HookAction background_draw_pre(ModContext*, void* args, void*, void*) {
     s_backgroundVisualScope = visual_effects_active() && !palace_excluded();
     if (s_backgroundVisualScope) boundary::begin_visual_environment();
     auto* background = mods::arg<daBg_c*>(args, 0);
-    if (!background || !visual_effects_active() || runtime_settings().style != Style::AstralPlane)
+    const bool darkHourBackgroundFog =
+        runtime_settings().style == Style::DarkHour &&
+        runtime_settings().darkHourFogStart > 0.0f;
+    if (!background || !visual_effects_active() ||
+        (runtime_settings().style != Style::AstralPlane && !darkHourBackgroundFog))
         return HOOK_CONTINUE;
 
     // MFB applied before_model immediately before each stage-background draw.
@@ -250,6 +254,19 @@ HookAction background_draw_pre(ModContext*, void* args, void*, void*) {
             fog->mColor = {static_cast<u8>(part.tevstr->FogCol.r),
                            static_cast<u8>(part.tevstr->FogCol.g),
                            static_cast<u8>(part.tevstr->FogCol.b), 255};
+            if (runtime_settings().style == Style::DarkHour) {
+                // Stage backgrounds own their material fog separately from the
+                // generated-light fog. Apply the universal Dark Hour control
+                // here as well so it changes the actual terrain distance fade.
+                const float visibility = std::clamp(
+                    runtime_settings().darkHourFogStart, 0.0f, 2.0f);
+                const float startFraction = std::min(visibility, 1.0f) * 0.70f +
+                    std::max(visibility - 1.0f, 0.0f) * 0.20f;
+                const float authoredRange = std::max(
+                    0.0f, part.tevstr->mFogEndZ - part.tevstr->mFogStartZ);
+                fog->mStartZ = part.tevstr->mFogStartZ +
+                    authoredRange * startFraction;
+            }
             if (auto* view = dComIfGd_getView()) {
                 fog->mNearZ = view->near_;
                 fog->mFarZ = view->far_;

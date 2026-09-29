@@ -46,6 +46,11 @@ bool kakariko_village() {
     return stage != nullptr && std::strncmp(stage, "F_SP109", 7) == 0;
 }
 
+bool gerudo_desert() {
+    const char* stage = dComIfGp_getStartStageName();
+    return stage != nullptr && std::strncmp(stage, "F_SP124", 7) == 0;
+}
+
 bool reduced_dark_hour_outdoor() {
     return forest_temple_outside_bridge() || faron_woods() || castle_town();
 }
@@ -448,9 +453,14 @@ void tint_dark_hour_background_color(GXColorS10& color) {
         color.b = static_cast<s16>(std::clamp(36.0f + luma * 0.86f * exposure, 0.0f, 1023.0f));
         return;
     }
-    color.r = scale_channel(color.r, 0.42f * exposure);
-    color.g = scale_channel(color.g, 1.10f * exposure);
-    color.b = scale_channel(color.b, 0.50f * exposure);
+    // Gerudo's sand becomes neon green under the shared Dark Hour grade.
+    // Correct only the stage's background/terrain colors; actor lighting and
+    // every other Dark Hour area keep their existing grade.
+    const float desertScale = gerudo_desert() ? 0.82f : 1.0f;
+    const float desertGreenScale = gerudo_desert() ? 0.62f : 1.0f;
+    color.r = scale_channel(color.r, 0.42f * exposure * desertScale);
+    color.g = scale_channel(color.g, 1.10f * exposure * desertScale * desertGreenScale);
+    color.b = scale_channel(color.b, 0.50f * exposure * desertScale);
 }
 
 void tint_dark_hour_background_light(J3DLightObj& light) {
@@ -465,9 +475,11 @@ void tint_dark_hour_background_light(J3DLightObj& light) {
         info->mColor.b = static_cast<u8>(std::clamp(26.0f + luma * 0.86f * exposure, 0.0f, 255.0f));
         return;
     }
-    info->mColor.r = scale_channel(info->mColor.r, 0.42f * exposure);
-    info->mColor.g = scale_channel(info->mColor.g, 1.10f * exposure);
-    info->mColor.b = scale_channel(info->mColor.b, 0.50f * exposure);
+    const float desertScale = gerudo_desert() ? 0.82f : 1.0f;
+    const float desertGreenScale = gerudo_desert() ? 0.62f : 1.0f;
+    info->mColor.r = scale_channel(info->mColor.r, 0.42f * exposure * desertScale);
+    info->mColor.g = scale_channel(info->mColor.g, 1.10f * exposure * desertScale * desertGreenScale);
+    info->mColor.b = scale_channel(info->mColor.b, 0.50f * exposure * desertScale);
 }
 
 void apply_indoor_window_accent(dKy_tevstr_c& tev) {
@@ -527,7 +539,8 @@ void apply_outdoor_moonlight(dKy_tevstr_c& tev) {
     }
     if (strongest >= 0) {
         GXColor& color = tev.mLights[strongest].getLightInfo()->mColor;
-        const float energy = std::clamp(strongestLuma, 58.0f, 108.0f);
+        const float minimumEnergy = gerudo_desert() ? 40.0f : 58.0f;
+        const float energy = std::clamp(strongestLuma, minimumEnergy, 108.0f);
         color.r = static_cast<u8>(std::clamp(energy * 0.58f, 0.0f, 255.0f));
         color.g = static_cast<u8>(std::clamp(energy, 0.0f, 255.0f));
         color.b = static_cast<u8>(std::clamp(energy * 0.76f, 0.0f, 255.0f));
@@ -643,7 +656,16 @@ void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
         }
         fogFar = std::clamp(fogFar > 100.0f ? fogFar : 7000.0f, 500.0f, 7000.0f);
         const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.18f;
-        fogNear = std::clamp(std::min(authoredNear, fogFar * 0.24f), 0.0f, fogFar - 1.0f);
+        const float currentNear = std::clamp(std::min(authoredNear, fogFar * 0.24f),
+                                             0.0f, fogFar - 1.0f);
+        // This is intentionally universal for Dark Hour outdoor areas. Move
+        // only the fog start toward the camera's far range; fogFar remains
+        // unchanged so distant mountains and objects keep their fade distance.
+        const float visibility = std::clamp(runtime_settings().darkHourFogStart, 0.0f, 2.0f);
+        const float targetNear = visibility <= 1.0f
+            ? currentNear + (fogFar * 0.70f - currentNear) * visibility
+            : fogFar * (0.70f + (visibility - 1.0f) * 0.20f);
+        fogNear = std::clamp(targetNear, 0.0f, fogFar - 1.0f);
         adjust_high_camera_fog(fogNear, fogFar);
     }
 }
@@ -781,8 +803,9 @@ void apply_mfb_bloom_profile() {
     // without recoloring the room's ambient light.
     const bool dungeonIndoor = dark_hour_dungeon_indoor();
     const bool reducedOutdoor = reduced_dark_hour_outdoor();
-    const f32 darkHourScale = reducedOutdoor ? reduced_dark_hour_outdoor_scale()
-        : (dungeonIndoor ? 0.34f : (indoor ? 0.58f : 1.0f));
+    const f32 desertBloomScale = gerudo_desert() ? 0.78f : 1.0f;
+    const f32 darkHourScale = (reducedOutdoor ? reduced_dark_hour_outdoor_scale()
+        : (dungeonIndoor ? 0.34f : (indoor ? 0.58f : 1.0f))) * desertBloomScale;
     const int threshold = reducedOutdoor
         ? std::min(255, static_cast<int>(profile->info.mThreshold) + 34)
         : indoor
