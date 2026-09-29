@@ -371,8 +371,12 @@ void initialize() {
     mods::hook::add_post<TwilightCameraLightSet>(twilight_camera_light_post);
 }
 void begin_visual_environment() {
+    // Dark Hour already supplies its own palette, fog, sky, bloom, and moonlight.
+    // Feeding it the authored layer-14 environment first double-processes the
+    // scene and produces the fluorescent overexposure seen in bright materials.
     if (s_visual_environment_depth == 0 && visual_effects_active() &&
-        !palace_excluded() && dComIfG_play_c::getLayerNo(0) != 14) {
+        runtime_settings().style != Style::DarkHour && !palace_excluded() &&
+        dComIfG_play_c::getLayerNo(0) != 14) {
         auto* stage = dComIfGp_getStage();
         if (stage != nullptr) {
             s_visualLayerState.stage = stage;
