@@ -3,10 +3,15 @@
 This directory only documents the external music files. They are not bundled
 inside the `.dusk` archive and are not loaded from this `res/music` directory.
 
-Place the MP3 files beside the Dusklight executable:
+Place the MP3 files in one of these locations:
 
 - Windows: beside `Dusklight.exe`
-- macOS: beside `Dusklight.app/Contents/MacOS/Dusklight`
+- macOS preferred: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom music/`
+- macOS fallback: beside `Dusklight.app/Contents/MacOS/Dusklight`
+
+On macOS, the Application Support folder is created automatically the first
+time the mod starts. That copy takes priority for each track when it exists;
+missing tracks individually fall back to the executable directory.
 
 Use these exact filenames:
 

@@ -21,9 +21,11 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <cstddef>
 #include <cstdio>
+#include <string>
 #define DR_MP3_IMPLEMENTATION
 #include "third_party/dr_mp3.h"
 
@@ -41,6 +43,28 @@ bool init_mp3(drmp3* decoder, const std::filesystem::path& path) {
     return drmp3_init_file(decoder,
         reinterpret_cast<const char*>(utf8_path.c_str()), nullptr) != 0;
 #endif
+}
+
+#if defined(__APPLE__)
+std::filesystem::path mac_user_music_directory() {
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || *home == '\0') return {};
+    return std::filesystem::path(home) /
+        "Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom music";
+}
+#endif
+
+std::filesystem::path music_file(const std::filesystem::path& executableDirectory,
+                                 const char* filename) {
+#if defined(__APPLE__)
+    const auto userDirectory = mac_user_music_directory();
+    if (!userDirectory.empty()) {
+        std::error_code error;
+        const auto userFile = userDirectory / filename;
+        if (std::filesystem::is_regular_file(userFile, error)) return userFile;
+    }
+#endif
+    return executableDirectory / filename;
 }
 
 Z2SceneMgr* LiveSceneManager = nullptr;
@@ -636,11 +660,25 @@ bool is_boss_bgm(u32 id) {
 ModResult initialize() {
     const auto directory = platform::executable_directory();
     if (directory.empty()) return MOD_UNAVAILABLE;
-    AstralMp3Ambient.open(directory / "Astral Plane.mp3");
-    AstralMp3Combat.open(directory / "Astral Plane CM.mp3");
-    DarkHourAmbient.open(directory / "tartarus 0d06.mp3");
-    DarkHourCombat.open(directory / "Mass Destruction.mp3");
-    MasterOfShadow.open(directory / "Master of Shadow.mp3");
+#if defined(__APPLE__)
+    if (const auto userDirectory = mac_user_music_directory(); !userDirectory.empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(userDirectory, error);
+        const std::string message = "macOS custom music folder (preferred when a track exists): " +
+            userDirectory.string();
+        if (error) {
+            const std::string warning = message + " (could not create: " + error.message() + ")";
+            svc_log->warn(mod_ctx, warning.c_str());
+        } else {
+            svc_log->info(mod_ctx, message.c_str());
+        }
+    }
+#endif
+    AstralMp3Ambient.open(music_file(directory, "Astral Plane.mp3"));
+    AstralMp3Combat.open(music_file(directory, "Astral Plane CM.mp3"));
+    DarkHourAmbient.open(music_file(directory, "tartarus 0d06.mp3"));
+    DarkHourCombat.open(music_file(directory, "Mass Destruction.mp3"));
+    MasterOfShadow.open(music_file(directory, "Master of Shadow.mp3"));
     if (mods::hook::add_pre<RegisterMixCallback>(register_mix_pre) != MOD_OK)
         return MOD_UNSUPPORTED;
     mixHookInstalled = true;

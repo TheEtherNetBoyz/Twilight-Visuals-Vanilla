@@ -13,11 +13,19 @@ from external MP3 files by the mod's native audio mixer.
 
 ## Custom music
 
-The music files are not stored inside the `.dusk` archive. Place them in the
-same directory as the Dusklight executable:
+The music files are not stored inside the `.dusk` archive. On Windows, place
+them in the same directory as the Dusklight executable. On macOS, the mod
+checks the user music folder first and keeps the executable directory as a
+fallback:
 
 - Windows: beside `Dusklight.exe`
-- macOS: beside the app executable at `Dusklight.app/Contents/MacOS/`
+- macOS preferred: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom music/`
+- macOS fallback: beside the app executable at `Dusklight.app/Contents/MacOS/`
+
+The macOS Application Support folder is created automatically the first time
+the mod starts. If the same filename exists in both locations, the Application
+Support copy is used. If a track is missing there, that individual track falls
+back to the executable directory.
 
 Use these exact filenames:
 
