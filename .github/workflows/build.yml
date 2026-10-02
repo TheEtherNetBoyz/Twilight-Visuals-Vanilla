@@ -161,6 +161,9 @@ jobs:
       - name: Set up Ninja
         run: python3 -m pip install --disable-pip-version-check ninja
 
+      - name: Install Rust Android target
+        run: rustup target add --toolchain stable aarch64-linux-android
+
       - name: Fetch Dusklight source
         run: >-
           cmake -S . -B build-fetch-android -G Ninja
