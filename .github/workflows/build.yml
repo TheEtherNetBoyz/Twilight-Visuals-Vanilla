@@ -153,7 +153,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
 
       - name: Install Android SDK and NDK
-        run: sdkmanager "platforms;android-37" "ndk;${ANDROID_NDK_VERSION}"
+        run: sdkmanager "platforms;android-28" "ndk;${ANDROID_NDK_VERSION}"
 
       - name: Set up CMake and Ninja
         uses: lukka/get-cmake@latest
