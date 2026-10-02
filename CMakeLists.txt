@@ -3,7 +3,7 @@ project(twilight_visuals_vanilla CXX)
 
 # The Dusklight version to build against: a release tag (e.g. "v1.5.0") or a commit SHA.
 if (NOT DUSKLIGHT_VERSION)
-    set(DUSKLIGHT_VERSION "edf42c6a7202647b56dd2fcdef02d17671bc814b")
+    set(DUSKLIGHT_VERSION "b245c6bef8b4a370afb2453104a585dd41c97676")
 endif ()
 # Fetches the Dusklight sources into ./dusklight and provides DUSKLIGHT_DIR.
 # Use -DDUSKLIGHT_DIR= to point at an existing Dusklight checkout.
@@ -53,6 +53,9 @@ if (NOT DUSKLIGHT_BUILD_DIR)
             "Dusklight build directory containing generated dependency headers" FORCE)
     elseif (APPLE)
         set(DUSKLIGHT_BUILD_DIR "${DUSKLIGHT_DIR}/build/macos-default-relwithdebinfo" CACHE PATH
+            "Dusklight build directory containing generated dependency headers" FORCE)
+    elseif (ANDROID)
+        set(DUSKLIGHT_BUILD_DIR "${DUSKLIGHT_DIR}/build/android-arm64" CACHE PATH
             "Dusklight build directory containing generated dependency headers" FORCE)
     else ()
         set(DUSKLIGHT_BUILD_DIR "${DUSKLIGHT_DIR}/build/linux-default-relwithdebinfo" CACHE PATH

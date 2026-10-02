@@ -33,7 +33,7 @@ jobs:
         shell: pwsh
         run: >-
           cmake -S . -B build-ci -G Ninja
-          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
+          -DDUSKLIGHT_VERSION=b245c6bef8b4a370afb2453104a585dd41c97676
 
       - name: Configure Dusklight dependencies
         shell: pwsh
@@ -47,7 +47,7 @@ jobs:
         run: >-
           cmake -S . -B build-ci -G Ninja
           -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
-          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
+          -DDUSKLIGHT_VERSION=b245c6bef8b4a370afb2453104a585dd41c97676
 
       - name: Build mod package
         shell: pwsh
@@ -86,7 +86,7 @@ jobs:
       - name: Fetch Dusklight source
         run: >-
           cmake -S . -B build-fetch-macos -G Ninja
-          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
+          -DDUSKLIGHT_VERSION=b245c6bef8b4a370afb2453104a585dd41c97676
 
       - name: Configure Dusklight host
         # Keep the libc++ compatibility flags for older supported toolchains. Aurora's
@@ -117,7 +117,7 @@ jobs:
           -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
           -DDUSKLIGHT_BUILD_DIR="$RUNNER_TEMP/dusklight-build"
           -DDUSK_GAME_EXE="$RUNNER_TEMP/dusklight-build/Dusklight.app/Contents/MacOS/Dusklight"
-          -DDUSKLIGHT_VERSION=edf42c6a7202647b56dd2fcdef02d17671bc814b
+          -DDUSKLIGHT_VERSION=b245c6bef8b4a370afb2453104a585dd41c97676
 
       - name: Build macOS mod package
         run: >-
@@ -129,4 +129,81 @@ jobs:
         with:
           name: twilight-visuals-vanilla-macos-arm64
           path: build-ci-macos/mods/twilight_visuals.dusk
+          if-no-files-found: error
+
+  build-android:
+    runs-on: ubuntu-24.04
+    env:
+      ANDROID_NDK_VERSION: 29.0.14206865
+
+    steps:
+      - name: Check out mod source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK
+        run: sdkmanager "platforms;android-37" "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Set up CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Set up Ninja
+        run: python3 -m pip install --disable-pip-version-check ninja
+
+      - name: Fetch Dusklight source
+        run: >-
+          cmake -S . -B build-fetch-android -G Ninja
+          -DDUSKLIGHT_VERSION=b245c6bef8b4a370afb2453104a585dd41c97676
+
+      - name: Configure Dusklight Android dependencies
+        run: cmake --preset android-arm64
+        working-directory: dusklight
+
+      - name: Build Dusklight Android dependency tree
+        run: cmake --build --preset android-arm64 --target dusklight --parallel
+        working-directory: dusklight
+
+      - name: Configure Twilight Visuals Android ARM64
+        run: >-
+          cmake -S . -B build-ci-android -G Ninja
+          -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/build/cmake/android.toolchain.cmake"
+          -DANDROID_ABI=arm64-v8a
+          -DANDROID_PLATFORM=android-28
+          -DDUSKLIGHT_DIR="${{ github.workspace }}/dusklight"
+          -DDUSKLIGHT_BUILD_DIR="${{ github.workspace }}/dusklight/build/android-arm64"
+          -DDUSKLIGHT_VERSION=b245c6bef8b4a370afb2453104a585dd41c97676
+
+      - name: Build Android mod package
+        run: cmake --build build-ci-android --target twilight_visuals_package --parallel
+
+      - name: Stage Twilight Visuals into Android APK assets
+        run: |
+          mkdir -p dusklight/build/android-arm64/bundled_mods
+          cp build-ci-android/mods/twilight_visuals.dusk \
+            dusklight/build/android-arm64/bundled_mods/twilight_visuals.dusk
+
+      - name: Build Dusklight Android APK
+        run: ./gradlew :app:assembleDebug
+        working-directory: dusklight/platforms/android
+
+      - name: Upload Android ARM64 mod package
+        uses: actions/upload-artifact@v4
+        with:
+          name: twilight-visuals-vanilla-android-arm64
+          path: build-ci-android/mods/twilight_visuals.dusk
+          if-no-files-found: error
+
+      - name: Upload Dusklight Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dusklight-twilight-visuals-android-arm64-debug
+          path: dusklight/platforms/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           if-no-files-found: error

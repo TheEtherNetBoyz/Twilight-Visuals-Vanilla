@@ -8,6 +8,8 @@ Place the MP3 files in one of these locations:
 - Windows: beside `Dusklight.exe`
 - macOS preferred: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom music/`
 - macOS fallback: beside `Dusklight.app/Contents/MacOS/Dusklight`
+- Android: Dusklight's per-mod data directory, in `custom music/` (the exact
+  path is logged when the mod loads)
 
 On macOS, the Application Support folder is created automatically the first
 time the mod starts. That copy takes priority for each track when it exists;

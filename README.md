@@ -16,11 +16,14 @@ from external MP3 files by the mod's native audio mixer.
 The music files are not stored inside the `.dusk` archive. On Windows, place
 them in the same directory as the Dusklight executable. On macOS, the mod
 checks the user music folder first and keeps the executable directory as a
-fallback:
+fallback. On Android, place them in the mod's persistent data directory under
+`custom music` (the exact path is printed in the Dusklight log when the mod
+loads):
 
 - Windows: beside `Dusklight.exe`
 - macOS preferred: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom music/`
 - macOS fallback: beside the app executable at `Dusklight.app/Contents/MacOS/`
+- Android: Dusklight's per-mod data directory, in `custom music/`
 
 The macOS Application Support folder is created automatically the first time
 the mod starts. If the same filename exists in both locations, the Application
@@ -77,6 +80,42 @@ cmake --build build-macos --target twilight_visuals_package
 The macOS package contains `lib/macos-arm64/mod.so` and can be copied into the
 test app's `mods` directory. The mod's platform layer keeps Dusklight and
 Aurora read-only.
+
+### Android ARM64
+
+Build the matching Dusklight Android dependency tree first, then configure and
+package this mod with the Android NDK toolchain. The official Dusklight Android
+shell requires Android SDK Platform 37, the NDK version selected by the
+Dusklight presets, and JDK 17 or newer:
+
+```powershell
+Push-Location dusklight-latest
+cmake --preset android-arm64
+cmake --build --preset android-arm64 --target dusklight
+Pop-Location
+
+cmake -S . -B build-android-arm64 -G Ninja `
+  -DCMAKE_TOOLCHAIN_FILE="$env:ANDROID_HOME/ndk/$env:ANDROID_NDK_VERSION/build/cmake/android.toolchain.cmake" `
+  -DANDROID_ABI=arm64-v8a `
+  -DANDROID_PLATFORM=android-28 `
+  -DDUSKLIGHT_DIR="$PWD/dusklight-latest" `
+  -DDUSKLIGHT_BUILD_DIR="$PWD/dusklight-latest/build/android-arm64" `
+  -DDUSKLIGHT_VERSION=b245c6bef8b4a370afb2453104a585dd41c97676
+cmake --build build-android-arm64 --target twilight_visuals_package
+```
+
+The Android bundle is emitted at
+`build-android-arm64/mods/twilight_visuals.dusk` and contains
+`lib/android-arm64/mod.so`. For a normal Android installation, copy that
+`.dusk` into Dusklight's Android mod/import flow or include it in the APK's
+`assets/mods` directory when rebuilding the Dusklight shell. The mod itself
+does not modify Dusklight or Aurora.
+
+The included GitHub Actions workflow also stages the bundle into Dusklight's
+Android assets, builds the debug APK, and uploads both the `.dusk` package and
+APK as workflow artifacts. Push the repository to GitHub, run the workflow
+from the Actions tab, then download
+`dusklight-twilight-visuals-android-arm64-debug` from the completed run.
 
 The hook design follows Dusklight's official
 [Hooking Game Functions guide](https://github.com/TwilitRealm/dusklight/blob/main/docs/modding.md#hooking-game-functions).

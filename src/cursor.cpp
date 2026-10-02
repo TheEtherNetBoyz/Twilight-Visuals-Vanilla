@@ -98,10 +98,10 @@ ModResult initialize() {
     }
     result = mods::hook::add_pre<SetCursorVisible>(set_cursor_visible_pre);
     if (result != MOD_OK) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__ANDROID__)
         // This is a convenience hook. Some platform builds do not export the host's
         // private cursor helper, but the rest of the mod can operate without it.
-        svc_log->warn(mod_ctx, "Gameplay cursor visibility hook unavailable; leaving host cursor behavior unchanged.");
+        svc_log->warn(mod_ctx, "Gameplay cursor visibility hook unavailable on this platform; leaving host cursor behavior unchanged.");
         mods::hook::uninstall<MouseRead>();
         mods::hook::uninstall<ImGuiBegin>();
         return MOD_OK;

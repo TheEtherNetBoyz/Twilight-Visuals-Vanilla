@@ -1,5 +1,7 @@
 #include "platform.hpp"
 
+#include "service_refs.hpp"
+
 #include <vector>
 
 #if defined(_WIN32)
@@ -45,6 +47,18 @@ std::filesystem::path executable_directory() {
     }
 #else
     return {};
+#endif
+}
+
+std::filesystem::path custom_music_directory() {
+#if defined(__ANDROID__)
+    if (svc_host == nullptr || svc_host->data_dir == nullptr) return {};
+    const char* dataDirectory = nullptr;
+    if (svc_host->data_dir(mod_ctx, &dataDirectory) != MOD_OK ||
+        dataDirectory == nullptr || *dataDirectory == '\0') return {};
+    return std::filesystem::path(dataDirectory) / "custom music";
+#else
+    return executable_directory();
 #endif
 }
 

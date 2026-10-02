@@ -658,8 +658,26 @@ bool is_boss_bgm(u32 id) {
     }
 }
 ModResult initialize() {
-    const auto directory = platform::executable_directory();
+    const auto directory = platform::custom_music_directory();
+#if defined(__ANDROID__)
+    if (!directory.empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(directory, error);
+        if (error) {
+            const std::string warning = "Android custom music folder could not be created: " +
+                directory.string() + " (" + error.message() + ")";
+            svc_log->warn(mod_ctx, warning.c_str());
+        } else {
+            const std::string message = "Android custom music folder: " + directory.string();
+            svc_log->info(mod_ctx, message.c_str());
+        }
+    } else {
+        svc_log->warn(mod_ctx,
+            "Android custom music folder is unavailable; continuing without external MP3s.");
+    }
+#else
     if (directory.empty()) return MOD_UNAVAILABLE;
+#endif
 #if defined(__APPLE__)
     if (const auto userDirectory = mac_user_music_directory(); !userDirectory.empty()) {
         std::error_code error;
@@ -674,11 +692,13 @@ ModResult initialize() {
         }
     }
 #endif
-    AstralMp3Ambient.open(music_file(directory, "Astral Plane.mp3"));
-    AstralMp3Combat.open(music_file(directory, "Astral Plane CM.mp3"));
-    DarkHourAmbient.open(music_file(directory, "tartarus 0d06.mp3"));
-    DarkHourCombat.open(music_file(directory, "Mass Destruction.mp3"));
-    MasterOfShadow.open(music_file(directory, "Master of Shadow.mp3"));
+    if (!directory.empty()) {
+        AstralMp3Ambient.open(music_file(directory, "Astral Plane.mp3"));
+        AstralMp3Combat.open(music_file(directory, "Astral Plane CM.mp3"));
+        DarkHourAmbient.open(music_file(directory, "tartarus 0d06.mp3"));
+        DarkHourCombat.open(music_file(directory, "Mass Destruction.mp3"));
+        MasterOfShadow.open(music_file(directory, "Master of Shadow.mp3"));
+    }
     if (mods::hook::add_pre<RegisterMixCallback>(register_mix_pre) != MOD_OK)
         return MOD_UNSUPPORTED;
     mixHookInstalled = true;

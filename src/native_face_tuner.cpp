@@ -144,6 +144,13 @@ bool resolve(const char* name, void** out) {
 }
 
 ModResult initialize() {
+#if defined(__ANDROID__)
+    // Dusklight's Android shell does not export the private native graphics
+    // tuner symbols used by this optional desktop integration. Avoid installing
+    // partial hooks before returning unavailable; the rest of the mod remains
+    // fully usable through its public settings UI.
+    return MOD_UNAVAILABLE;
+#endif
     ModResult result = mods::hook::add_pre<GraphicsSettingOf>(setting_pre);
     if (result != MOD_OK) return result;
     gSettingHook = true;
