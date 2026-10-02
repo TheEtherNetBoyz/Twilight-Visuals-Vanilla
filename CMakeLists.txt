@@ -79,6 +79,14 @@ target_include_directories(twilight_visuals PRIVATE
     "${DUSKLIGHT_BUILD_DIR}/_deps/rmlui-src/Include"
     "${_twilight_visuals_sdl_include_dir}")
 
+# MSVC keeps __cplusplus at 199711L unless this conformance switch is enabled.
+# Dusklight's Dolphin compatibility headers use that macro to decide whether
+# they need to provide a pre-C++11 nullptr fallback. Without the switch, the
+# fallback changes nullptr into integer 0 and breaks MSVC 14.44's STL headers.
+if (MSVC)
+    target_compile_options(twilight_visuals PRIVATE /Zc:__cplusplus)
+endif ()
+
 # The generic Windows SDK import library omits J3DAnmBase's virtual destructor.
 # Dusklight itself exports it; this import-only library makes the owned custom
 # animation objects link without adding or replacing any game implementation.
