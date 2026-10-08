@@ -31,6 +31,11 @@ add_mod(twilight_visuals
             src/music.cpp
             src/music_track.cpp
             src/environment.cpp
+            src/environment_areas.cpp
+            src/environment_bloom.cpp
+            src/environment_fog.cpp
+            src/environment_skybox.cpp
+            src/environment_weather.cpp
             src/postprocess.cpp
             src/particles.cpp
             src/native_particles.cpp

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <memory>
 #include <chrono>
+#include <vector>
 
 namespace twilight_visuals::sky {
 namespace {
@@ -11,6 +12,20 @@ constexpr char archive[] = "Stg_00";
 char source[32]{};
 std::unique_ptr<dRes_info_c> resource;
 std::chrono::steady_clock::time_point retryAfter{};
+struct CachedSky {
+    char stage[32]{};
+    u8 layer{};
+    u8 slot{};
+    u8 minimum{};
+    VisualSkybox value{};
+};
+std::vector<CachedSky> cache;
+
+void reset_loader() {
+    resource.reset();
+    retryAfter = {};
+    source[0] = 0;
+}
 // This archive belongs to the mod, not the live stage's resource table.
 dStage_nodeHeader* find(dStage_fileHeader* file, const char* tag) {
     if (!file) return nullptr;
@@ -47,15 +62,21 @@ bool colors(dStage_fileHeader* file, int layer, int slot, stage_vrboxcol_info_cl
 }
 }
 void shutdown() {
-    resource.reset();
-    retryAfter = {};
-    source[0] = 0;
+    reset_loader();
+    cache.clear();
 }
 bool read(VisualSkybox* out, const char* stage, u8 layer, u8 slot, u8 minimum) {
     if (!out || !stage || !*stage || std::strlen(stage) >= sizeof(source) ||
         layer >= 15 || slot >= 6 || minimum >= 15) return false;
+    for (const CachedSky& cached : cache) {
+        if (cached.layer == layer && cached.slot == slot && cached.minimum == minimum &&
+            std::strcmp(cached.stage, stage) == 0) {
+            *out = cached.value;
+            return true;
+        }
+    }
     if (std::strcmp(source, stage)) {
-        shutdown();
+        reset_loader();
         std::strcpy(source, stage);
     }
     if (!resource) {
@@ -99,6 +120,13 @@ bool read(VisualSkybox* out, const char* stage, u8 layer, u8 slot, u8 minimum) {
     out->cloudShadow = {value.kumo_shadow_col.r, value.kumo_shadow_col.g, value.kumo_shadow_col.b, value.kumo_shadow_col.a};
     out->hazeOuter = {value.kasumi_outer_col.r, value.kasumi_outer_col.g, value.kasumi_outer_col.b, value.kasumi_outer_col.a};
     out->hazeInner = {value.kasumi_inner_col.r, value.kasumi_inner_col.g, value.kasumi_inner_col.b, value.kasumi_inner_col.a};
+    CachedSky cached{};
+    std::strcpy(cached.stage, stage);
+    cached.layer = layer;
+    cached.slot = slot;
+    cached.minimum = minimum;
+    cached.value = *out;
+    cache.push_back(cached);
     return true;
 }
 bool select_layer(int layer, int minimum) {

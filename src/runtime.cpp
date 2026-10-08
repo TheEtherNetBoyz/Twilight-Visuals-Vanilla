@@ -82,7 +82,7 @@ void refresh_runtime_settings() {
             get_int(config.bloomBrightness, 100), 0, 100)) / 100.0f;
     g_runtime.darkHourFogStart =
         static_cast<float>(std::clamp<std::int64_t>(
-            get_int(config.darkHourFogStart, 0), 0, 200)) / 100.0f;
+            get_int(config.darkHourFogStart, 0), 0, 400)) / 100.0f;
     g_runtime.legacyBloom = get_bool(config.legacyBloom);
     g_runtime.skywardSwordRunning = get_bool(config.skywardSwordRunning);
     g_runtime.sheathSwordWhileSprinting = get_bool(config.sheathSwordWhileSprinting);

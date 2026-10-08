@@ -89,14 +89,14 @@ bool modified_face() { return read_face() != 0; }
 int read_dark_hour_fog() {
     int64_t value = 0;
     svc_config->get_int(mod_ctx, settings().darkHourFogStart, &value);
-    return static_cast<int>(std::clamp<int64_t>(value, 0, 200));
+    return static_cast<int>(std::clamp<int64_t>(value, 0, 400));
 }
 
 void write_dark_hour_fog(int value) {
-    svc_config->set_int(mod_ctx, settings().darkHourFogStart, std::clamp(value, 0, 200));
+    svc_config->set_int(mod_ctx, settings().darkHourFogStart, std::clamp(value, 0, 400));
 }
 
-Rml::String label_percent(int value) { return std::to_string(std::clamp(value, 0, 200)) + "%"; }
+Rml::String label_percent(int value) { return std::to_string(std::clamp(value, 0, 400)) + "%"; }
 
 bool modified_dark_hour_fog() { return read_dark_hour_fog() != 0; }
 
@@ -116,7 +116,7 @@ HookAction setting_pre(ModContext*, void* args, void* retval, void*) {
     if (option == kDarkHourFogOption) {
         static const GraphicsSetting setting{
             .min = 0,
-            .max = 200,
+            .max = 400,
             .defaultValue = 0,
             .step = 5,
             .watchesRenderSize = false,
@@ -214,9 +214,10 @@ void open() {
 }
 
 void open_dark_hour_fog() {
-    open_tuner(kDarkHourFogOption, "Dark Hour Foreground Visibility",
-        "Adjust how far the Dark Hour foreground remains visible around Link. Higher values "
-        "push the terrain fog farther away while preserving the distant darkness.");
+    open_tuner(kDarkHourFogOption, "Foreground Visibility",
+        "Adjust how far the foreground remains visible around Link in every visual style. Higher values "
+        "push the terrain fog farther away while preserving the distant darkness. 0% preserves the "
+        "original fog.");
 }
 
 void shutdown() {

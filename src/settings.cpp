@@ -197,15 +197,16 @@ void add_number(UiElementHandle pane, const char* label, const char* help, Confi
 void add_dark_hour_fog_tuner(UiElementHandle pane) {
     UiControlDesc control = UI_CONTROL_DESC_INIT;
     control.kind = UI_CONTROL_NUMBER;
-    control.label = "Dark Hour Foreground Visibility";
+    control.label = "Foreground Visibility";
     control.help_rml =
-        "Controls how far foreground terrain remains visible during The Dark Hour. "
-        "Adjust this setting to open the full-screen graphics tuner.";
+        "Controls how far foreground terrain remains visible in every visual style. "
+        "0% preserves the original fog. Adjust this setting to open the full-screen "
+        "graphics tuner.";
     control.binding = UI_BINDING_CALLBACKS;
     control.get = get_dark_hour_fog_value;
     control.set = adjust_dark_hour_fog_value;
     control.min = 0;
-    control.max = 200;
+    control.max = 400;
     control.step = 5;
     control.suffix = "%";
     add_control(pane, control);
@@ -324,7 +325,7 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     add_number(left, "Astral Chromatic Aberration",
         "Adjust Astral Plane red/blue edge separation.", g_settings.chromaticAberration, 0, 200,
         5, "%");
-    add_select(left, "Skybox", "Choose the authored sky palette used by Twilight Visuals.",
+    add_select(left, "Skybox", "Choose the authored sky palette used by every Twilight Visuals style.",
         g_settings.skybox, kSkyboxes);
     add_toggle(left, "Exclude Palace of Twilight",
         "Keep the Palace of Twilight's native visuals and music instead of applying the selected "
@@ -453,13 +454,13 @@ void open_face_tuner(ModContext*, void*) {
 void get_dark_hour_fog_value(ModContext*, void*, UiControlValue* outValue) {
     if (outValue == nullptr) return;
     outValue->int_value = std::clamp<int64_t>(
-        get_int(g_settings.darkHourFogStart, 0), 0, 200);
+        get_int(g_settings.darkHourFogStart, 0), 0, 400);
 }
 
 void adjust_dark_hour_fog_value(ModContext*, void*, const UiControlValue* value) {
     if (value != nullptr) {
         svc_config->set_int(mod_ctx, g_settings.darkHourFogStart,
-            std::clamp<int64_t>(value->int_value, 0, 200));
+            std::clamp<int64_t>(value->int_value, 0, 400));
     }
     native_face_tuner::open_dark_hour_fog();
 }

@@ -1,23 +1,18 @@
 #include "environment.hpp"
+#include "environment_bloom.hpp"
+#include "environment_fog.hpp"
+#include "environment_skybox.hpp"
+#include "environment_weather.hpp"
 
-#include "compat.hpp"
 #include "runtime.hpp"
 #include "boundary.hpp"
-#include "sky.hpp"
 
 #include "mods/service.hpp"
 #include "hook_api.hpp"
 
 #include "d/d_com_inf_game.h"
 #include "d/d_kankyo.h"
-#include "d/d_kankyo_data.h"
-#include "d/d_stage.h"
-#include "d/d_kankyo_wether.h"
-#include "d/actor/d_a_player.h"
-#include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_graphic.h"
-#include "m_Do/m_Do_audio.h"
-#include "SSystem/SComponent/c_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,114 +20,10 @@
 
 namespace twilight_visuals::environment {
 
-bool forest_temple_outside_bridge() {
-    const char* stage = dComIfGp_getStartStageName();
-    return stage != nullptr && std::strncmp(stage, "D_MN05", 6) == 0 &&
-           dComIfGp_roomControl_getStayNo() == 4;
-}
-
-bool faron_woods() {
-    const char* stage = dComIfGp_getStartStageName();
-    return stage != nullptr && std::strncmp(stage, "F_SP108", 7) == 0;
-}
-
-bool castle_town() {
-    const char* stage = dComIfGp_getStartStageName();
-    return stage != nullptr && std::strncmp(stage, "F_SP116", 7) == 0;
-}
-
-bool kakariko_village() {
-    const char* stage = dComIfGp_getStartStageName();
-    return stage != nullptr && std::strncmp(stage, "F_SP109", 7) == 0;
-}
-
-bool gerudo_desert() {
-    const char* stage = dComIfGp_getStartStageName();
-    return stage != nullptr && std::strncmp(stage, "F_SP124", 7) == 0;
-}
-
-bool reduced_dark_hour_outdoor() {
-    return forest_temple_outside_bridge() || faron_woods() || castle_town();
-}
-
-float reduced_dark_hour_outdoor_scale() {
-    return castle_town() ? 0.68f : 0.56f;
-}
-
-bool dark_hour_indoor() {
-    if (!visual_effects_active() || runtime_settings().style != Style::DarkHour) return false;
-    const char* stageName = dComIfGp_getStartStageName();
-    // Palace rooms 0 and 11 are its exterior-like spaces. Its remaining rooms
-    // are interiors and should use the same indoor profile as other dungeons.
-    if (stageName != nullptr && std::strncmp(stageName, "D_MN08", 6) == 0) {
-        const int room = dComIfGp_roomControl_getStayNo();
-        return room != 0 && room != 11;
-    }
-    // Forest Temple room 4 is the open-air bridge room and should retain the
-    // normal outdoor Dark Hour sky, exposure and bloom profile.
-    if (forest_temple_outside_bridge()) return false;
-
-    // Dungeon stage types are not consistent enough to identify every room.
-    // Use the room's authored vrbox flag instead: sky-enabled dungeon maps are
-    // exterior, while rooms without a vrbox use the indoor preset.
-    const bool dungeonStage = stageName != nullptr &&
-        (std::strncmp(stageName, "D_MN", 4) == 0 ||
-         std::strncmp(stageName, "D_SB", 4) == 0);
-    if (dungeonStage) {
-        auto* rooms = dComIfGp_getStageRoom();
-        const int room = dComIfGp_roomControl_getStayNo();
-        if (rooms != nullptr && room >= 0 && room < rooms->num &&
-            rooms->m_entries[room] != nullptr) {
-            return dStage_roomRead_dt_c_GetVrboxswitch(*rooms->m_entries[room]) == 0;
-        }
-    }
-
-    auto* stage = dComIfGp_getStage();
-    auto* stagInfo = stage != nullptr ? stage->getStagInfo() : nullptr;
-    if (stagInfo == nullptr) return false;
-    const u32 type = dStage_stagInfo_GetSTType(stagInfo);
-    return type == ST_ROOM || type == ST_DUNGEON || type == ST_BOSS_ROOM;
-}
-
 namespace {
 DEFINE_HOOK(&dScnKy_env_light_c::setLight, EnvironmentSetLight);
 DEFINE_HOOK(&dScnKy_env_light_c::setLight_bg, EnvironmentSetLightBg);
 DEFINE_HOOK(&dScnKy_env_light_c::setLight_actor, EnvironmentSetLightActor);
-
-struct WeatherState {
-    bool saved{};
-    int rainCount{};
-    int baseRainCount{};
-    int snowCount{};
-    u8 weather{};
-    u8 weatherPat0{};
-    u8 weatherPat1{};
-    u8 prevGather{0xFF};
-    u8 currGather{0xFF};
-    float gatherRatio{-1.0f};
-    u8 patMode{};
-    u8 patModeGather{};
-    float patternRatio{1.0f};
-    float fogNear{};
-    float fogFar{};
-    float fogOverrideNear{};
-    float fogOverrideFar{};
-    float fogOverrideRatio{};
-    u8 moyaMode{};
-    int moyaCount{};
-    u8 snowFogMode{};
-    int thunderMode{};
-    u8 thunderStatus{};
-    cXyz* windOverride{};
-    float customWindPower{};
-    u8 teachWindExistence{};
-};
-
-WeatherState g_weatherState;
-cXyz g_stormWind(1.0f, 0.0f, 0.0f);
-cXyz g_windStormWind(1.75f, 0.0f, 0.0f);
-int g_windGustTimer{};
-bool g_windGustActive{};
 
 bool environment_active() {
     const char* stage = dComIfGp_getStartStageName();
@@ -164,165 +55,6 @@ bool palace_dark_hour() {
     const char* stage = dComIfGp_getStartStageName();
     return runtime_settings().style == Style::DarkHour && stage != nullptr &&
            std::strncmp(stage, "D_MN08", 6) == 0;
-}
-
-void restore_weather() {
-    WeatherState& saved = g_weatherState;
-    g_windGustTimer = 0;
-    g_windGustActive = false;
-    if (!saved.saved) return;
-    dKyw_rain_set(saved.rainCount);
-    g_env_light.base_raincnt = saved.baseRainCount;
-    g_env_light.mSnowCount = saved.snowCount;
-    g_env_light.mColpatWeather = saved.weather;
-    g_env_light.wether_pat0 = saved.weatherPat0;
-    g_env_light.wether_pat1 = saved.weatherPat1;
-    g_env_light.mColpatPrevGather = saved.prevGather;
-    g_env_light.mColpatCurrGather = saved.currGather;
-    g_env_light.mColPatBlendGather = saved.gatherRatio;
-    g_env_light.mColPatMode = saved.patMode;
-    g_env_light.mColPatModeGather = saved.patModeGather;
-    g_env_light.pat_ratio = saved.patternRatio;
-    g_env_light.mFogNear = saved.fogNear;
-    g_env_light.mFogFar = saved.fogFar;
-    g_env_light.field_0x11ec = saved.fogOverrideNear;
-    g_env_light.field_0x11f0 = saved.fogOverrideFar;
-    g_env_light.field_0x11f4 = saved.fogOverrideRatio;
-    g_env_light.mMoyaMode = saved.moyaMode;
-    g_env_light.mMoyaCount = saved.moyaCount;
-    g_env_light.field_0xe92 = saved.snowFogMode;
-    g_env_light.mThunderEff.mMode = saved.thunderMode;
-    g_env_light.mThunderEff.mStatus = saved.thunderStatus;
-    g_env_light.global_wind_influence.vec_override = saved.windOverride;
-    g_env_light.custom_windpower = saved.customWindPower;
-    g_env_light.TeachWind_existence = saved.teachWindExistence;
-    saved.saved = false;
-}
-
-void apply_weather() {
-    const Weather weather = runtime_settings().weather;
-    if (weather == Weather::Current) {
-        restore_weather();
-        return;
-    }
-
-    WeatherState& saved = g_weatherState;
-    if (!saved.saved) {
-        saved.saved = true;
-        saved.rainCount = g_env_light.raincnt;
-        saved.baseRainCount = g_env_light.base_raincnt;
-        saved.snowCount = g_env_light.mSnowCount;
-        saved.weather = g_env_light.mColpatWeather;
-        saved.weatherPat0 = g_env_light.wether_pat0;
-        saved.weatherPat1 = g_env_light.wether_pat1;
-        saved.prevGather = g_env_light.mColpatPrevGather;
-        saved.currGather = g_env_light.mColpatCurrGather;
-        saved.gatherRatio = g_env_light.mColPatBlendGather;
-        saved.patMode = g_env_light.mColPatMode;
-        saved.patModeGather = g_env_light.mColPatModeGather;
-        saved.patternRatio = g_env_light.pat_ratio;
-        saved.fogNear = g_env_light.mFogNear;
-        saved.fogFar = g_env_light.mFogFar;
-        saved.fogOverrideNear = g_env_light.field_0x11ec;
-        saved.fogOverrideFar = g_env_light.field_0x11f0;
-        saved.fogOverrideRatio = g_env_light.field_0x11f4;
-        saved.moyaMode = g_env_light.mMoyaMode;
-        saved.moyaCount = g_env_light.mMoyaCount;
-        saved.snowFogMode = g_env_light.field_0xe92;
-        saved.thunderMode = g_env_light.mThunderEff.mMode;
-        saved.thunderStatus = g_env_light.mThunderEff.mStatus;
-        saved.windOverride = g_env_light.global_wind_influence.vec_override;
-        saved.customWindPower = g_env_light.custom_windpower;
-        saved.teachWindExistence = g_env_light.TeachWind_existence;
-    }
-
-    const bool windStorm = weather == Weather::WindStorm;
-    const bool snowStorm = weather == Weather::SnowStorm;
-    const bool storm = windStorm || snowStorm;
-    if (storm) {
-        if (g_windGustTimer <= 0) {
-            g_windGustActive = !g_windGustActive;
-            g_windGustTimer = g_windGustActive ? 60 + static_cast<int>(cM_rndF(361.0f)) :
-                                                60 + static_cast<int>(cM_rndF(120.0f));
-        }
-        --g_windGustTimer;
-    } else {
-        g_windGustTimer = 0;
-        g_windGustActive = false;
-    }
-
-    const bool denseFog = snowStorm || weather == Weather::HeavyFog;
-    if (snowStorm) {
-        g_env_light.mMoyaMode = 0;
-        g_env_light.mMoyaCount = 50;
-        g_env_light.field_0xe92 = 1;
-        g_env_light.field_0x11ec = 200.0f;
-        g_env_light.field_0x11f0 = 2200.0f;
-        g_env_light.field_0x11f4 = 1.0f;
-        g_mEnvSeMgr.setSnowPower(127.0f);
-    } else if (weather == Weather::HeavyFog) {
-        g_env_light.mMoyaMode = 2;
-        g_env_light.mMoyaCount = 50;
-        g_env_light.field_0xe92 = 0;
-        g_env_light.field_0x11ec = 200.0f;
-        g_env_light.field_0x11f0 = 2200.0f;
-        g_env_light.field_0x11f4 = 1.0f;
-    } else {
-        g_env_light.mMoyaMode = saved.moyaMode;
-        g_env_light.mMoyaCount = saved.moyaCount;
-        g_env_light.field_0xe92 = saved.snowFogMode;
-        g_env_light.field_0x11ec = saved.fogOverrideNear;
-        g_env_light.field_0x11f0 = saved.fogOverrideFar;
-        g_env_light.field_0x11f4 = saved.fogOverrideRatio;
-    }
-
-    const bool bloodRain = weather == Weather::BloodRain;
-    const bool wet = weather == Weather::Rain || weather == Weather::Lightning || windStorm;
-    const bool raining = wet || bloodRain;
-    const u8 pattern = wet ? 1 : (weather == Weather::Snow || snowStorm) ? 2 : 0;
-    g_env_light.mColpatWeather = pattern;
-    g_env_light.wether_pat0 = pattern;
-    g_env_light.wether_pat1 = pattern;
-    g_env_light.mColpatPrevGather = 0xFF;
-    g_env_light.mColpatCurrGather = 0xFF;
-    g_env_light.mColPatBlendGather = -1.0f;
-    g_env_light.mColPatMode = 0;
-    g_env_light.mColPatModeGather = 0;
-    g_env_light.pat_ratio = 1.0f;
-
-    if (raining) {
-        dKyw_rain_set(250);
-        g_env_light.mSnowCount = 0;
-    } else if (weather == Weather::Snow || snowStorm) {
-        dKyw_rain_set(0);
-        g_env_light.mSnowCount = 500;
-    } else {
-        dKyw_rain_set(0);
-        g_env_light.mSnowCount = 0;
-    }
-
-    const int thunderMode = weather == Weather::Lightning ? 1 : 0;
-    if (thunderMode == 0 && g_env_light.mThunderEff.mMode != 0)
-        g_env_light.mThunderEff.mStatus = 0;
-    g_env_light.mThunderEff.mMode = thunderMode;
-
-    if (storm) {
-        g_env_light.global_wind_influence.vec_override = windStorm ? &g_windStormWind : &g_stormWind;
-        g_env_light.custom_windpower = g_windGustActive ? 1.0f : 0.0f;
-        g_env_light.TeachWind_existence = 1;
-    } else {
-        g_env_light.global_wind_influence.vec_override = saved.windOverride;
-        g_env_light.custom_windpower = saved.customWindPower;
-        g_env_light.TeachWind_existence = saved.teachWindExistence;
-    }
-
-    if (denseFog) {
-        g_env_light.mFogNear = 200.0f;
-        g_env_light.mFogFar = 2200.0f;
-    } else {
-        g_env_light.mFogNear = saved.fogNear;
-        g_env_light.mFogFar = saved.fogFar;
-    }
 }
 
 s16 scale_channel(s16 value, float factor) {
@@ -359,14 +91,6 @@ void normal_twilight_tint(J3DLightObj& light, u8 red, u8 green, u8 blue) {
     info->mColor.b = static_cast<u8>((static_cast<u32>(info->mColor.b) * blue) / 255);
 }
 
-void normal_twilight_fog(GXColorS10& color, float& fogNear, float& fogFar) {
-    color.r = static_cast<s16>(std::clamp((color.r + 42 * 3) / 4, 0, 255));
-    color.g = static_cast<s16>(std::clamp((color.g + 58 * 3) / 4, 0, 255));
-    color.b = static_cast<s16>(std::clamp((color.b + 74 * 3) / 4, 0, 255));
-    fogNear = std::min(fogNear, 1800.0f);
-    fogFar = std::min(fogFar, 18000.0f);
-}
-
 void apply_normal_twilight_environment(dScnKy_env_light_c& env) {
     if (!environment_active() || runtime_settings().style != Style::Normal ||
         dComIfG_play_c::getLayerNo(0) == 14) return;
@@ -377,7 +101,7 @@ void apply_normal_twilight_environment(dScnKy_env_light_c& env) {
             normal_twilight_tint(env.bg_amb_col[i], 176, 169, 208);
         for (int i = 0; i < 6; ++i)
             normal_twilight_tint(env.dungeonlight_col[i], 214, 193, 224);
-        normal_twilight_fog(env.fog_col, env.mFogNear, env.mFogFar);
+        fog::apply_normal_twilight(env.fog_col, env.mFogNear, env.mFogFar);
     }
 
     // Some rooms provide authored Twilight lighting tables but no VRB table.
@@ -391,35 +115,6 @@ void apply_normal_twilight_environment(dScnKy_env_light_c& env) {
     env.vrbox_kasumi_outer_col = {119, 91, 49, 255};
     env.vrbox_kasumi_inner_col = {57, 75, 81, 255};
     env.hide_vrbox = false;
-
-    // Use vanilla's authored Twilight sky colors, but deliberately do not copy
-    // the source area's fog distances or fog color. Those stage-specific fog
-    // values caused the severe white/gold overexposure seen in other maps.
-    VisualSkybox twilightSky{};
-    if (sky::read(&twilightSky, "F_SP108", 14, 0, 10)) {
-        env.vrbox_sky_col = {twilightSky.sky.r, twilightSky.sky.g,
-                             twilightSky.sky.b, env.vrbox_sky_col.a};
-        env.vrbox_kumo_top_col = {twilightSky.cloudTop.r,
-                                  twilightSky.cloudTop.g,
-                                  twilightSky.cloudTop.b,
-                                  env.vrbox_kumo_top_col.a};
-        env.vrbox_kumo_bottom_col = {twilightSky.cloudBottom.r,
-                                     twilightSky.cloudBottom.g,
-                                     twilightSky.cloudBottom.b,
-                                     env.vrbox_kumo_bottom_col.a};
-        env.vrbox_kumo_shadow_col = {twilightSky.cloudShadow.r,
-                                     twilightSky.cloudShadow.g,
-                                     twilightSky.cloudShadow.b,
-                                     twilightSky.cloudShadow.a};
-        env.vrbox_kasumi_outer_col = {twilightSky.hazeOuter.r,
-                                      twilightSky.hazeOuter.g,
-                                      twilightSky.hazeOuter.b,
-                                      twilightSky.hazeOuter.a};
-        env.vrbox_kasumi_inner_col = {twilightSky.hazeInner.r,
-                                      twilightSky.hazeInner.g,
-                                      twilightSky.hazeInner.b,
-                                      twilightSky.hazeInner.a};
-    }
 
 }
 
@@ -601,75 +296,6 @@ void tint_astral_light(J3DLightObj& light, bool redAccent) {
         std::clamp(luma * (redAccent ? 0.28f : 1.05f), 0.0f, 255.0f));
 }
 
-void adjust_high_camera_fog(float& fogNear, float& fogFar) {
-    auto* camera = static_cast<camera_process_class*>(dComIfGp_getCamera(0));
-    auto* player = dComIfGp_getLinkPlayer();
-    if (camera == nullptr || player == nullptr || fogFar <= 1.0f) return;
-    const float height = std::max(0.0f, camera->view.lookat.eye.y - player->current.pos.y);
-    const float blend = std::clamp((height - 700.0f) / 2300.0f, 0.0f, 1.0f);
-    if (blend <= 0.0f) return;
-    const float originalNear = fogNear;
-    const float expandedFar = std::max(fogFar, 24000.0f);
-    fogFar += (expandedFar - fogFar) * blend;
-    const float expandedNear = fogFar * 0.78f;
-    fogNear = std::clamp(originalNear + (expandedNear - originalNear) * blend,
-                         0.0f, fogFar - 1.0f);
-}
-
-void apply_distance_fog(GXColorS10& fog, float& fogNear, float& fogFar) {
-    if (!environment_active()) return;
-    if (emulated_normal_twilight()) {
-        normal_twilight_fog(fog, fogNear, fogFar);
-    } else if (runtime_settings().style == Style::AstralPlane) {
-        const GXColorS10& ambient = g_env_light.bg_amb_col[0];
-        const auto channel = [](s16 fogValue, s16 ambientValue) {
-            return static_cast<s16>(
-                std::clamp((fogValue * 3 + ambientValue * 2) / 5, 0, 1023));
-        };
-        fog.r = channel(g_env_light.fog_col.r, ambient.r);
-        fog.g = channel(g_env_light.fog_col.g, ambient.g);
-        fog.b = channel(g_env_light.fog_col.b, ambient.b);
-        fogFar = std::clamp(fogFar > 100.0f ? fogFar : 9000.0f, 500.0f, 9000.0f);
-        const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.20f;
-        fogNear = std::clamp(std::min(authoredNear, fogFar * 0.28f), 0.0f, fogFar - 1.0f);
-        adjust_high_camera_fog(fogNear, fogFar);
-    } else if (runtime_settings().style == Style::DarkHour) {
-        const GXColorS10& ambient = g_env_light.bg_amb_col[0];
-        const float luma =
-            std::max(0.0f, ambient.r * 0.20f + ambient.g * 0.70f + ambient.b * 0.10f);
-        if (dark_hour_indoor()) {
-            // Keep the cool atmospheric depth without letting near-black fog sweep
-            // across the room as the camera turns. A lighter blue and later onset
-            // preserve distant geometry while retaining the indoor mood.
-            fog.r = static_cast<s16>(std::clamp(luma * 0.12f + 8.0f, 0.0f, 1023.0f));
-            fog.g = static_cast<s16>(std::clamp(luma * 0.21f + 14.0f, 0.0f, 1023.0f));
-            fog.b = static_cast<s16>(std::clamp(luma * 0.36f + 24.0f, 0.0f, 1023.0f));
-            fogFar = std::clamp(fogFar > 100.0f ? fogFar : 7800.0f, 4500.0f, 9000.0f);
-            const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.72f;
-            fogNear = std::clamp(std::max(authoredNear, fogFar * 0.72f),
-                                 0.0f, fogFar - 1.0f);
-            return;
-        } else {
-            fog.r = static_cast<s16>(std::clamp(luma * 0.20f, 0.0f, 1023.0f));
-            fog.g = static_cast<s16>(std::clamp(luma * 0.90f + 24.0f, 0.0f, 1023.0f));
-            fog.b = static_cast<s16>(std::clamp(luma * 0.32f, 0.0f, 1023.0f));
-        }
-        fogFar = std::clamp(fogFar > 100.0f ? fogFar : 7000.0f, 500.0f, 7000.0f);
-        const float authoredNear = fogNear > 0.0f ? fogNear : fogFar * 0.18f;
-        const float currentNear = std::clamp(std::min(authoredNear, fogFar * 0.24f),
-                                             0.0f, fogFar - 1.0f);
-        // This is intentionally universal for Dark Hour outdoor areas. Move
-        // only the fog start toward the camera's far range; fogFar remains
-        // unchanged so distant mountains and objects keep their fade distance.
-        const float visibility = std::clamp(runtime_settings().darkHourFogStart, 0.0f, 2.0f);
-        const float targetNear = visibility <= 1.0f
-            ? currentNear + (fogFar * 0.70f - currentNear) * visibility
-            : fogFar * (0.70f + (visibility - 1.0f) * 0.20f);
-        fogNear = std::clamp(targetNear, 0.0f, fogFar - 1.0f);
-        adjust_high_camera_fog(fogNear, fogFar);
-    }
-}
-
 void apply_astral_palette(dScnKy_env_light_c& env) {
     if (!environment_active() || runtime_settings().style != Style::AstralPlane) return;
     const auto tint = [](GXColorS10& color, bool warm) {
@@ -737,107 +363,14 @@ void apply_dark_hour_palette(dScnKy_env_light_c& env) {
 }
 
 
-void apply_authored_skybox(dScnKy_env_light_c& env) {
-    if (!environment_active()) return;
-
-    // The Normal preset must use the current stage's own layer-14 sky palette.
-    // The selectable cross-stage skybox override is reserved for custom styles;
-    // applying it here is what made Normal Twilight diverge from native Twilight.
-    if (runtime_settings().style == Style::Normal) return;
-
-    // Load the authored palette in the mod; no host-side sky cache survives a reload.
-    VisualSkybox sky{};
-    const u8 variant = static_cast<u8>(runtime_settings().skybox);
-    if (!compat::get_authored_sky(sky, variant)) return;
-
-    env.vrbox_sky_col = {sky.sky.r, sky.sky.g, sky.sky.b,
-                         env.vrbox_sky_col.a};
-    env.vrbox_kumo_top_col = {sky.cloudTop.r, sky.cloudTop.g, sky.cloudTop.b,
-                              env.vrbox_kumo_top_col.a};
-    env.vrbox_kumo_bottom_col = {sky.cloudBottom.r, sky.cloudBottom.g,
-                                 sky.cloudBottom.b, env.vrbox_kumo_bottom_col.a};
-    env.vrbox_kumo_shadow_col = {sky.cloudShadow.r, sky.cloudShadow.g,
-                                 sky.cloudShadow.b, sky.cloudShadow.a};
-    env.vrbox_kasumi_outer_col = {sky.hazeOuter.r, sky.hazeOuter.g,
-                                  sky.hazeOuter.b, sky.hazeOuter.a};
-    env.vrbox_kasumi_inner_col = {sky.hazeInner.r, sky.hazeInner.g,
-                                  sky.hazeInner.b, sky.hazeInner.a};
-}
-
-void apply_mfb_bloom_profile() {
-    if (!environment_active()) return;
-    const bool normalTwilight = runtime_settings().style == Style::Normal;
-    if (normalTwilight && dComIfG_play_c::getLayerNo(0) == 14) return;
-    if (normalTwilight && boundary::using_authored_twilight_environment()) return;
-    // The vanilla global-Twilight option owns bloom unconditionally. Preserve
-    // the older wolf/event exclusions only for the custom visual styles.
-    if (!normalTwilight &&
-        (daPy_py_c::checkNowWolfPowerUp() || g_env_light.field_0x12fc >= 0)) return;
-    const dKydata_BloomInfo_c* profile = dKyd_BloomInf_tbl_getp(1);
-    if (profile == nullptr) return;
-    auto* bloom = mDoGph_gInf_c::getBloom();
-    // Dusklight's vanilla global-Twilight option explicitly allocates bloom in
-    // rooms whose native environment has it disabled. Merely copying profile 1
-    // into an unallocated bloom object leaves Normal Twilight dark and flat.
-    if (normalTwilight) bloom->create();
-    // Dark Hour uses the same authored Twilight bloom preset. Only the color is
-    // changed below to keep its green identity; threshold, blur, density, and
-    // blend strength must remain identical to regular Twilight.
-    if (normalTwilight) {
-        bloom->setPoint(profile->info.mThreshold);
-        bloom->setBlureSize(profile->info.mBlurAmount);
-        bloom->setBlureRatio(profile->info.mDensity);
-        bloom->setBlendColor({profile->info.mColorR, profile->info.mColorG,
-                              profile->info.mColorB, profile->info.mOrigDensity});
-        bloom->setMonoColor({profile->info.mSaturateSubtractR,
-                             profile->info.mSaturateSubtractG,
-                             profile->info.mSaturateSubtractB,
-                             profile->info.mSaturateSubtractA});
-        bloom->setEnable(1);
-        bloom->setMode(profile->info.mType != BLOOM_CLEAR);
-        return;
-    }
-    const bool indoor = dark_hour_indoor();
-    // Indoors, preserve the blue base grade but let bright authored details
-    // bloom in the exterior Dark Hour green. This creates localized glow
-    // without recoloring the room's ambient light.
-    const bool dungeonIndoor = dark_hour_dungeon_indoor();
-    const bool reducedOutdoor = reduced_dark_hour_outdoor();
-    const f32 desertBloomScale = gerudo_desert() ? 0.78f : 1.0f;
-    const f32 darkHourScale = (reducedOutdoor ? reduced_dark_hour_outdoor_scale()
-        : (dungeonIndoor ? 0.34f : (indoor ? 0.58f : 1.0f))) * desertBloomScale;
-    const int threshold = reducedOutdoor
-        ? std::min(255, static_cast<int>(profile->info.mThreshold) + 34)
-        : indoor
-        ? std::min(255, static_cast<int>(profile->info.mThreshold) +
-                            (dungeonIndoor ? 56 : 32))
-        : profile->info.mThreshold;
-    bloom->setPoint(static_cast<u8>(threshold));
-    static s16 pulsePhase{};
-    const f32 pulse = cM_ssin(pulsePhase);
-    pulsePhase += static_cast<s16>(cM_rndF(2000.0f) + 500.0f);
-    const f32 blur = profile->info.mBlurAmount * darkHourScale * (1.0f + pulse * 0.2f);
-    bloom->setBlureSize(static_cast<u8>(std::clamp(blur, 0.0f, 255.0f)));
-    bloom->setBlureRatio(profile->info.mDensity * darkHourScale);
-    bloom->setBlendColor({profile->info.mColorR, profile->info.mColorG,
-                          profile->info.mColorB,
-                          static_cast<u8>(profile->info.mOrigDensity * darkHourScale)});
-    bloom->setMonoColor({profile->info.mSaturateSubtractR,
-                         profile->info.mSaturateSubtractG,
-                         profile->info.mSaturateSubtractB,
-                         profile->info.mSaturateSubtractA});
-    bloom->setEnable(profile->info.mThreshold < 0xFF);
-    bloom->setMode(profile->info.mType != BLOOM_CLEAR);
-}
-
 void set_light_post(ModContext*, void* args, void*, void*) {
     if (!environment_active()) return;
     auto* env = mods::arg<dScnKy_env_light_c*>(args, 0);
     apply_normal_twilight_environment(*env);
-    apply_authored_skybox(*env);
     apply_astral_palette(*env);
     apply_dark_hour_palette(*env);
-    apply_mfb_bloom_profile();
+    skybox::apply(*env);
+    bloom::apply_profile();
 
     const float factor = brightness();
     scale_color(env->actor_amb_col, factor);
@@ -899,7 +432,7 @@ void set_light_post(ModContext*, void* args, void*, void*) {
 
 HookAction set_light_pre(ModContext*, void*, void*, void*) {
     if (environment_active()) boundary::begin_visual_environment();
-    apply_weather();
+    weather::apply();
     return HOOK_CONTINUE;
 }
 
@@ -915,7 +448,7 @@ void set_light_bg_post(ModContext*, void* args, void*, void*) {
     auto* fog = mods::arg<GXColorS10*>(args, 3);
     auto* fogNear = mods::arg<float*>(args, 4);
     auto* fogFar = mods::arg<float*>(args, 5);
-    apply_distance_fog(*fog, *fogNear, *fogFar);
+    fog::apply_distance(*fog, *fogNear, *fogFar);
     if (emulated_normal_twilight()) {
         for (int i = 0; i < 4; ++i)
             normal_twilight_tint(colors[i], 176, 169, 208);
@@ -949,7 +482,7 @@ void set_light_actor_post(ModContext*, void* args, void*, void*) {
     auto* fog = mods::arg<GXColorS10*>(args, 2);
     auto* fogNear = mods::arg<float*>(args, 3);
     auto* fogFar = mods::arg<float*>(args, 4);
-    apply_distance_fog(*fog, *fogNear, *fogFar);
+    fog::apply_distance(*fog, *fogNear, *fogFar);
     if (emulated_normal_twilight()) {
         normal_twilight_tint(tev->AmbCol, 205, 180, 218);
         for (int i = 0; i < 6; ++i)
@@ -986,14 +519,11 @@ ModResult install_hooks() {
 }
 
 void area_reloaded() {
-    // Previous area's baseline must never be restored into the new area.
-    g_weatherState = {};
-    g_windGustTimer = 0;
-    g_windGustActive = false;
+    weather::area_reloaded();
 }
 
 void uninstall_hooks() {
-    restore_weather();
+    weather::restore();
     mods::hook::uninstall<EnvironmentSetLightActor>();
     mods::hook::uninstall<EnvironmentSetLightBg>();
     mods::hook::uninstall<EnvironmentSetLight>();
