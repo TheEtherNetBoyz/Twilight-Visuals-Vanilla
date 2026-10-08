@@ -6,6 +6,10 @@ Yeah, this project was vibe coded, and yeah, AI sucks in a lot of ways.
 However, it allows me to make these cool mods and it's mostly for fun—I'll
 never ask for any money.
 
+I tried making this as easy as possible for anyone to do. All you should need
+is the extracted disc contents of both Twilight Princess and Skyward Sword. If
+there are any issues, please reach out.
+
 ---
 
 ## About
