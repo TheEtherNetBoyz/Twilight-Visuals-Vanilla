@@ -3,17 +3,15 @@
 This directory only documents the external music files. They are not bundled
 inside the `.dusk` archive and are not loaded from this `res/music` directory.
 
-Place the MP3 files in one of these locations:
+Place the MP3 files in this shared custom-asset structure:
 
-- Windows: beside `Dusklight.exe`
-- macOS preferred: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom music/`
-- macOS fallback: `Dusklight.app/Contents/MacOS/custom music/`
-- Android: Dusklight's per-mod data directory, in `custom music/` (the exact
+- Windows: `<Dusklight folder>\\custom assets\\music\\`
+- macOS: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom assets/music/`
+- Android: Dusklight's per-mod data directory, in `custom assets/music/` (the exact
   path is logged when the mod loads)
 
-On macOS, the Application Support folder is created automatically the first
-time the mod starts. That copy takes priority for each track when it exists;
-missing tracks individually fall back to the executable directory.
+The folder is created automatically when the mod starts. Previous music
+locations are not checked.
 
 Use these exact filenames:
 
@@ -26,5 +24,6 @@ Use these exact filenames:
 Restart Dusklight after adding or replacing files. In the Twilight Visuals
 settings, select `Astral Plane` or `The Dark Hour` under `Visual Style & Music`.
 Use `Custom Music Volume` for the replacement volume and enable `Override
-Temple Music` for temple and dungeon scenes. Missing or unsupported files are
-reported in the Dusklight log.
+Temple Music` for temple and dungeon scenes. Missing, empty, unreadable, or
+unsupported files are reported in the Dusklight log with the checked path and
+reason.

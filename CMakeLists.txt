@@ -42,6 +42,7 @@ add_mod(twilight_visuals
             src/load_acceleration.cpp
             src/hotkeys.cpp
             src/platform.cpp
+            src/external_assets.cpp
         MOD_JSON mod.json
         RES_DIR res
         BUNDLE

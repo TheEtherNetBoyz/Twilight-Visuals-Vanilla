@@ -27,22 +27,16 @@ from external MP3 files by the mod's native audio mixer.
 
 ## Custom music
 
-The music files are not stored inside the `.dusk` archive. On Windows, place
-them in the same directory as the Dusklight executable. On macOS, the mod
-checks the user music folder first and keeps the executable directory as a
-fallback. On Android, place them in the mod's persistent data directory under
-`custom music` (the exact path is printed in the Dusklight log when the mod
-loads):
+The music files are not stored inside the `.dusk` archive. Twilight Visuals
+creates one shared `custom assets` root with separate `music` and `animations`
+folders. Music is loaded only from the following platform-specific folder:
 
-- Windows: beside `Dusklight.exe`
-- macOS preferred: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom music/`
-- macOS fallback: beside the app executable at `Dusklight.app/Contents/MacOS/`
-- Android: Dusklight's per-mod data directory, in `custom music/`
+- Windows: `<Dusklight folder>\\custom assets\\music\\`
+- macOS: `~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom assets/music/`
+- Android: Dusklight's per-mod data directory, in `custom assets/music/`
 
-The macOS Application Support folder is created automatically the first time
-the mod starts. If the same filename exists in both locations, the Application
-Support copy is used. If a track is missing there, that individual track falls
-back to the executable directory.
+The folder is created automatically when the mod starts. Previous music
+locations are not checked.
 
 Use these exact filenames:
 
@@ -62,29 +56,34 @@ style should also replace music in temples and dungeons; the Palace exclusion
 setting still takes precedence.
 
 `Normal Twilight` and `Black and White` use the Palace of Twilight sequence
-instead of these MP3 replacements. Missing or unsupported files are reported
-in the Dusklight log and the corresponding replacement track will not play.
+instead of these MP3 replacements. Missing, empty, unreadable, or unsupported
+files are reported in the Dusklight log with the checked path and reason; the
+corresponding replacement track will not play.
 
 ## User-provided wall-running animations
 
-All normal builds load converted wall-running animations only from a folder
-beside the Dusklight executable:
+All normal builds load converted wall-running animations only from the
+`animations` folder under the same shared `custom assets` root:
 
 ```text
-Windows: <Dusklight folder>\\custom animations\\wall_run.bck
-         <Dusklight folder>\\custom animations\\ledge_grab.bck
+Windows: <Dusklight folder>\\custom assets\\animations\\wall_run.bck
+         <Dusklight folder>\\custom assets\\animations\\ledge_grab.bck
 
-macOS:   Dusklight.app/Contents/MacOS/custom animations/wall_run.bck
-         Dusklight.app/Contents/MacOS/custom animations/ledge_grab.bck
+macOS:   ~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom assets/animations/wall_run.bck
+         ~/Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom assets/animations/ledge_grab.bck
 ```
 
 The folder is created automatically when the mod starts. Copy the converter's
-two output files into the matching folder, then restart Dusklight. The old
-per-mod `mod_data/.../test animations/` location is never read.
+two output files into the matching folder, then restart Dusklight. Previous
+animation locations are never read.
 
 The public mod package intentionally does not contain these animation files.
 Users provide their own converted files so the package does not redistribute
 game-derived assets.
+
+If either file is missing, empty, unreadable, or not a valid BCK, Twilight
+Visuals records the exact expected path and the reason in the Dusklight log.
+Both files are checked so the log can identify every file that needs attention.
 
 For local development only, `-DTWILIGHT_BUNDLED_ANIMATION_BACKUP=ON` restores
 the old bundled loading code. The corresponding files must first be restored

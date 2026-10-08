@@ -3,6 +3,7 @@
 #include "runtime.hpp"
 #include "running.hpp"
 #include "platform.hpp"
+#include "external_assets.hpp"
 #include "service_refs.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
@@ -16,8 +17,6 @@
 
 #include <cmath>
 #include <filesystem>
-#include <fstream>
-#include <system_error>
 #include <vector>
 
 namespace twilight_visuals::wall_run {
@@ -86,11 +85,21 @@ bool intent(daAlink_c* p) {
 }
 
 bool loadClip(Clip& clip, const char* path) {
-    if (svc_resource->load(mod_ctx, path, &clip.buffer) != MOD_OK) return false;
+    if (svc_resource->load(mod_ctx, path, &clip.buffer) != MOD_OK) {
+        const std::string message =
+            "Twilight Visuals: bundled animation resource could not be loaded: " +
+            std::string(path);
+        svc_log->error(mod_ctx, message.c_str());
+        return false;
+    }
     const auto* data = static_cast<const unsigned char*>(clip.buffer.data);
     if (!ss::validBck(data, clip.buffer.size)) {
-        svc_log->warn(mod_ctx, "Rejected invalid BCK resource.");
+        const std::string message =
+            "Twilight Visuals: bundled animation resource is not a valid BCK file: " +
+            std::string(path);
+        svc_log->error(mod_ctx, message.c_str());
         svc_resource->free(mod_ctx, &clip.buffer);
+        clip.buffer = RESOURCE_BUFFER_INIT;
         return false;
     }
     J3DAnmLoaderDataBase::setResource(&clip.animation, data);
@@ -98,26 +107,43 @@ bool loadClip(Clip& clip, const char* path) {
     return true;
 }
 
+void logExternalClipError(const std::filesystem::path& path, const std::string& reason) {
+    const std::string message = "Twilight Visuals: " + reason + "\nExpected animation file: " +
+        external_assets::display_path(path) +
+        "\nRun the SS-TP Animation Converter, copy its output into the custom "
+        "assets/animations folder, and restart Dusklight.";
+    svc_log->error(mod_ctx, message.c_str());
+}
+
 bool loadExternalClip(Clip& clip, const char* filename) {
     const auto adjacentDirectory = platform::custom_animation_directory();
-    if (adjacentDirectory.empty()) return false;
+    if (adjacentDirectory.empty()) {
+        const std::string message =
+            "Twilight Visuals: could not determine the platform custom asset directory, so "
+            "the animations folder cannot be located. Required file: " +
+            std::string(filename);
+        svc_log->error(mod_ctx, message.c_str());
+        return false;
+    }
 
-    std::error_code createError;
-    std::filesystem::create_directories(adjacentDirectory, createError);
     const auto path = adjacentDirectory / filename;
-    std::ifstream stream(path, std::ios::binary | std::ios::ate);
-    if (!stream) return false;
-    const std::streamsize size = stream.tellg();
-    if (size <= 0) return false;
-    stream.seekg(0, std::ios::beg);
-    clip.externalData.resize(static_cast<std::size_t>(size));
-    if (!stream.read(reinterpret_cast<char*>(clip.externalData.data()), size)) {
-        clip.externalData.clear();
+    const auto directoryStatus = external_assets::ensure_directory(adjacentDirectory);
+    if (!directoryStatus) {
+        logExternalClipError(path, "could not prepare the custom assets/animations folder (" +
+            directoryStatus.reason + ").");
+        return false;
+    }
+
+    const auto fileStatus = external_assets::read_binary(path, clip.externalData);
+    if (!fileStatus) {
+        logExternalClipError(path, std::string("could not load ") + filename + " (" +
+            fileStatus.reason + ").");
         return false;
     }
     if (!ss::validBck(clip.externalData.data(), clip.externalData.size())) {
         clip.externalData.clear();
-        svc_log->warn(mod_ctx, "Rejected invalid external test BCK.");
+        logExternalClipError(path,
+            std::string("required animation file is not a valid BCK: ") + filename);
         return false;
     }
     clip.buffer.data = clip.externalData.data();
@@ -125,7 +151,8 @@ bool loadExternalClip(Clip& clip, const char* filename) {
     J3DAnmLoaderDataBase::setResource(&clip.animation, clip.buffer.data);
     clip.external = true;
     clip.ready = true;
-    const std::string message = "Loaded external test animation: " + path.string();
+    const std::string message = "Twilight Visuals: loaded custom animation: " +
+        external_assets::display_path(path);
     svc_log->info(mod_ctx, message.c_str());
     return true;
 }
@@ -458,12 +485,13 @@ HookAction jumpPre(ModContext*, void* args, void* result, void*) {
 void initialize() {
     if (installed) return;
 #if defined(TWILIGHT_BUNDLED_ANIMATION_BACKUP)
-    const bool clipsReady = loadClip(wallClip, "animations/wall_run.bck") &&
-        loadClip(ledgeGrabClip, "animations/ledge_grab.bck");
+    const bool wallClipReady = loadClip(wallClip, "animations/wall_run.bck");
+    const bool ledgeGrabClipReady = loadClip(ledgeGrabClip, "animations/ledge_grab.bck");
 #else
-    const bool clipsReady = loadExternalClip(wallClip, "wall_run.bck") &&
-        loadExternalClip(ledgeGrabClip, "ledge_grab.bck");
+    const bool wallClipReady = loadExternalClip(wallClip, "wall_run.bck");
+    const bool ledgeGrabClipReady = loadExternalClip(ledgeGrabClip, "ledge_grab.bck");
 #endif
+    const bool clipsReady = wallClipReady && ledgeGrabClipReady;
     if (clipsReady) {
         const bool hooksOk =
             mods::hook::add_pre<Move>(movePre) == MOD_OK &&
@@ -485,7 +513,10 @@ void initialize() {
         mods::hook::uninstall<Move>();
     }
     freeClips();
-    svc_log->warn(mod_ctx, "SS wall running unavailable; animation resources or hooks failed.");
+    svc_log->warn(mod_ctx, clipsReady
+        ? "SS wall running unavailable because one or more hooks could not be installed."
+        : "SS wall running unavailable because one or more required animation files failed to load."
+    );
 }
 
 void shutdown() {

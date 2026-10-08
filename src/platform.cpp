@@ -2,6 +2,7 @@
 
 #include "service_refs.hpp"
 
+#include <cstdlib>
 #include <vector>
 
 #if defined(_WIN32)
@@ -50,29 +51,32 @@ std::filesystem::path executable_directory() {
 #endif
 }
 
-std::filesystem::path custom_music_directory() {
+std::filesystem::path custom_asset_directory() {
 #if defined(__ANDROID__)
     if (svc_host == nullptr || svc_host->data_dir == nullptr) return {};
     const char* dataDirectory = nullptr;
     if (svc_host->data_dir(mod_ctx, &dataDirectory) != MOD_OK ||
         dataDirectory == nullptr || *dataDirectory == '\0') return {};
-    return std::filesystem::path(dataDirectory) / "custom music";
+    return std::filesystem::path(dataDirectory) / "custom assets";
+#elif defined(__APPLE__)
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || *home == '\0') return {};
+    return std::filesystem::path(home) /
+        "Library/Application Support/TwilitRealm/Dusklight/Twilight Visuals/custom assets";
 #else
-    return executable_directory();
+    const auto directory = executable_directory();
+    return directory.empty() ? std::filesystem::path{} : directory / "custom assets";
 #endif
 }
 
+std::filesystem::path custom_music_directory() {
+    const auto directory = custom_asset_directory();
+    return directory.empty() ? std::filesystem::path{} : directory / "music";
+}
+
 std::filesystem::path custom_animation_directory() {
-#if defined(__ANDROID__)
-    if (svc_host == nullptr || svc_host->data_dir == nullptr) return {};
-    const char* dataDirectory = nullptr;
-    if (svc_host->data_dir(mod_ctx, &dataDirectory) != MOD_OK ||
-        dataDirectory == nullptr || *dataDirectory == '\0') return {};
-    return std::filesystem::path(dataDirectory) / "custom animations";
-#else
-    const auto directory = executable_directory();
-    return directory.empty() ? std::filesystem::path{} : directory / "custom animations";
-#endif
+    const auto directory = custom_asset_directory();
+    return directory.empty() ? std::filesystem::path{} : directory / "animations";
 }
 
 }  // namespace twilight_visuals::platform
