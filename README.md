@@ -1,5 +1,15 @@
 # Twilight Visuals — Vanilla Dusklight port
 
+## Disclaimer
+
+Yeah, this project was vibe coded, and yeah, AI sucks in a lot of ways.
+However, it allows me to make these cool mods and it's mostly for fun—I'll
+never ask for any money.
+
+---
+
+## About
+
 This is a separate native Dusklight mod project. It targets the pinned upstream
 Dusklight SDK and uses the official `game` feature with typed game-function
 hooks. It does not include or link `TwilightHostApi`, does not require a rebuilt
