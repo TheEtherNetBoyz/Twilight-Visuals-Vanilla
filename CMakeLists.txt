@@ -29,6 +29,7 @@ add_mod(twilight_visuals
             src/monochrome.cpp
             src/hooks.cpp
             src/music.cpp
+            src/music_track.cpp
             src/environment.cpp
             src/postprocess.cpp
             src/particles.cpp

@@ -1,4 +1,5 @@
 #include "music.hpp"
+#include "music_track.hpp"
 #include "hook_api.hpp"
 #include "runtime.hpp"
 #include "TwilightMusicFade.h"
@@ -13,7 +14,6 @@
 #include "m_Do/m_Do_Reset.h"
 #include "m_Do/m_Do_audio.h"
 #include "mods/svc/hook.hpp"
-#include "Z2AudioLib/Z2Param.h"
 #include "Z2AudioLib/Z2SeqMgr.h"
 #include "mods/svc/log.h"
 #include "platform.hpp"
@@ -22,28 +22,15 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <filesystem>
 #include <cstddef>
 #include <cstdio>
 #include <string>
-#define DR_MP3_IMPLEMENTATION
-#include "third_party/dr_mp3.h"
 
 namespace twilight_visuals::music {
 bool is_boss_bgm(u32 id);
 void update_from_manager(Z2SeqMgr* manager);
 namespace {
 using dusk::audio::TwilightMusicFade;
-
-bool init_mp3(drmp3* decoder, const std::filesystem::path& path) {
-#if defined(_WIN32)
-    return drmp3_init_file_w(decoder, path.c_str(), nullptr) != 0;
-#else
-    const auto utf8_path = path.u8string();
-    return drmp3_init_file(decoder,
-        reinterpret_cast<const char*>(utf8_path.c_str()), nullptr) != 0;
-#endif
-}
 
 Z2SceneMgr* LiveSceneManager = nullptr;
 bool sceneSelectionKnown = false;
@@ -158,107 +145,6 @@ void refresh_scene_music_selection(bool replacementWanted, Z2SeqMgr* sequence,
     svc_log->info(mod_ctx, message);
 }
 
-struct Track {
-    drmp3 decoder{};
-    std::filesystem::path path;
-    bool available = false;
-    bool playbackStarted = false;
-    float audibleGain = 0;
-    std::array<float, 4096> decoded{};
-    size_t frameIndex = 0, frameCount = 0;
-    std::array<float, 2> a{}, b{};
-    bool primed = false;
-    double position = 0;
-
-    void close() {
-        if (available) drmp3_uninit(&decoder);
-        decoder = {};
-        available = playbackStarted = primed = false;
-        audibleGain = 0;
-        frameIndex = frameCount = 0;
-        position = 0;
-    }
-    void open(const std::filesystem::path& file) {
-        close();
-        path = file;
-        const auto fileStatus = external_assets::inspect_file(path);
-        if (!fileStatus) {
-            const std::string message = "Music unavailable (" + fileStatus.reason + "): " +
-                external_assets::display_path(path);
-            svc_log->warn(mod_ctx, message.c_str());
-            return;
-        }
-        available = init_mp3(&decoder, path);
-        if (available && (decoder.channels == 0 || decoder.channels > 2 || decoder.sampleRate == 0))
-            close();
-        const std::string message =
-            std::string(available ? "Streaming music: " : "Music unavailable (unsupported MP3): ") +
-            external_assets::display_path(path);
-        svc_log->write(mod_ctx, available ? LOG_LEVEL_INFO : LOG_LEVEL_WARN, message.c_str());
-    }
-    bool rewind() {
-        if (!available) return false;
-        if (!drmp3_seek_to_pcm_frame(&decoder, 0)) {
-            drmp3_uninit(&decoder);
-            decoder = {};
-            available = init_mp3(&decoder, path);
-        }
-        frameIndex = frameCount = 0;
-        return available;
-    }
-    bool next(std::array<float, 2>& sample) {
-        if (frameIndex == frameCount) {
-            frameIndex = 0;
-            frameCount = static_cast<size_t>(drmp3_read_pcm_frames_f32(
-                &decoder, decoded.size() / decoder.channels, decoded.data()));
-            if (!frameCount) {
-                if (!rewind()) return false;
-                frameCount = static_cast<size_t>(drmp3_read_pcm_frames_f32(
-                    &decoder, decoded.size() / decoder.channels, decoded.data()));
-                if (!frameCount) return false;
-            }
-        }
-        const size_t index = frameIndex++ * decoder.channels;
-        sample = {decoded[index], decoded[index + (decoder.channels == 2 ? 1 : 0)]};
-        return true;
-    }
-    void setGain(float target, float elapsed, bool smoothReduction = false,
-                 bool rewindWhenSilent = false, bool immediate = false) {
-        if (!available) return;
-        if (target > 0) playbackStarted = true;
-        const float step = std::clamp(elapsed, 0.0f, 0.05f);
-        audibleGain = immediate ? target : smoothReduction
-            ? audibleGain + std::clamp(target - audibleGain, -step, step)
-            : std::min(target, audibleGain + step);
-        if (rewindWhenSilent && target <= 0 && audibleGain <= 0.0001f && playbackStarted) {
-            rewind();
-            playbackStarted = primed = false;
-            position = 0;
-        }
-    }
-    void mix(float* output, u32 frames, u32 rate, float calibration, float volume,
-             bool pauseWhenSilent = false) {
-        if (!available || !playbackStarted || !rate ||
-            (pauseWhenSilent && audibleGain <= 0.0001f)) return;
-        if (!primed) {
-            if (!next(a) || !next(b)) return;
-            primed = true;
-        }
-        const double step = static_cast<double>(decoder.sampleRate) / rate;
-        const float gain = audibleGain * calibration * volume * Z2Param::VOL_BGM_DEFAULT;
-        for (u32 i = 0; i < frames; ++i) {
-            for (u32 channel = 0; channel < 2; ++channel)
-                output[2 * i + channel] +=
-                    (a[channel] + (b[channel] - a[channel]) * static_cast<float>(position)) * gain;
-            position += step;
-            while (position >= 1.0) {
-                a = b;
-                if (!next(b)) return;
-                position -= 1.0;
-            }
-        }
-    }
-};
 Track AstralMp3Ambient, AstralMp3Combat, DarkHourAmbient, DarkHourCombat, MasterOfShadow;
 std::atomic<float> TwilightMusicVolume{1};
 std::atomic<float> PalaceGain{1}, BattleGain{1}, BossGain{1};
@@ -289,11 +175,11 @@ void update_sequence(bool replacementScene, bool eligible, int musicMode,
     lastTick = tick;
     const bool astral = musicMode == 1;
     const bool darkHour = musicMode == 2;
-    const bool ready = AstralMp3Ambient.available;
-    const bool combatReady = AstralMp3Combat.available;
-    const bool darkHourReady = DarkHourAmbient.available;
-    const bool darkHourCombatReady = DarkHourCombat.available;
-    const bool bossReady = MasterOfShadow.available;
+    const bool ready = AstralMp3Ambient.isAvailable();
+    const bool combatReady = AstralMp3Combat.isAvailable();
+    const bool darkHourReady = DarkHourAmbient.isAvailable();
+    const bool darkHourCombatReady = DarkHourCombat.isAvailable();
+    const bool bossReady = MasterOfShadow.isAvailable();
     const bool selectionScope = replacementScene || battleScope;
     const bool customSelected = astral || darkHour;
     const bool selectionReady = astral ? ready : (darkHour && darkHourReady);
@@ -802,7 +688,7 @@ void update_from_manager(Z2SeqMgr* p) {
             static_cast<unsigned long long>(customMixCalls.load(std::memory_order_relaxed)),
             customMixPeak.load(std::memory_order_relaxed), enabled ? 1 : 0, safe ? 1 : 0,
             mode, static_cast<unsigned>(demo), main, sub, p->getStreamBgmID(), gain,
-            fade.astral(), DarkHourAmbient.audibleGain, DarkHourCombat.audibleGain);
+            fade.astral(), DarkHourAmbient.currentGain(), DarkHourCombat.currentGain());
         svc_log->info(mod_ctx, message);
     }
 }
