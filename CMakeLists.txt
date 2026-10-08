@@ -34,6 +34,7 @@ add_mod(twilight_visuals
             src/environment_areas.cpp
             src/environment_bloom.cpp
             src/environment_fog.cpp
+            src/environment_palette.cpp
             src/environment_skybox.cpp
             src/environment_weather.cpp
             src/postprocess.cpp
