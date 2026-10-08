@@ -62,4 +62,17 @@ std::filesystem::path custom_music_directory() {
 #endif
 }
 
+std::filesystem::path custom_animation_directory() {
+#if defined(__ANDROID__)
+    if (svc_host == nullptr || svc_host->data_dir == nullptr) return {};
+    const char* dataDirectory = nullptr;
+    if (svc_host->data_dir(mod_ctx, &dataDirectory) != MOD_OK ||
+        dataDirectory == nullptr || *dataDirectory == '\0') return {};
+    return std::filesystem::path(dataDirectory) / "custom animations";
+#else
+    const auto directory = executable_directory();
+    return directory.empty() ? std::filesystem::path{} : directory / "custom animations";
+#endif
+}
+
 }  // namespace twilight_visuals::platform

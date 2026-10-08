@@ -51,6 +51,32 @@ setting still takes precedence.
 instead of these MP3 replacements. Missing or unsupported files are reported
 in the Dusklight log and the corresponding replacement track will not play.
 
+## User-provided wall-running animations
+
+All normal builds load converted wall-running animations only from a folder
+beside the Dusklight executable:
+
+```text
+Windows: <Dusklight folder>\\custom animations\\wall_run.bck
+         <Dusklight folder>\\custom animations\\ledge_grab.bck
+
+macOS:   Dusklight.app/Contents/MacOS/custom animations/wall_run.bck
+         Dusklight.app/Contents/MacOS/custom animations/ledge_grab.bck
+```
+
+The folder is created automatically when the mod starts. Copy the converter's
+two output files into the matching folder, then restart Dusklight. The old
+per-mod `mod_data/.../test animations/` location is never read.
+
+The public mod package intentionally does not contain these animation files.
+Users provide their own converted files so the package does not redistribute
+game-derived assets.
+
+For local development only, `-DTWILIGHT_BUNDLED_ANIMATION_BACKUP=ON` restores
+the old bundled loading code. The corresponding files must first be restored
+from the ignored `local-animation-backup/` directory into `res/animations/`.
+Do not enable that option for a public upload.
+
 ## Build
 
 From this directory, point CMake at an unmodified Dusklight checkout:

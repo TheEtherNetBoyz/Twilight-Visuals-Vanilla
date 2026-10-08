@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.26)
 project(twilight_visuals_vanilla CXX)
 
+option(TWILIGHT_BUNDLED_ANIMATION_BACKUP
+    "Local-only backup: load wall-run BCK files from res/animations" OFF)
+
 # The Dusklight version to build against: a release tag (e.g. "v1.5.0") or a commit SHA.
 if (NOT DUSKLIGHT_VERSION)
     set(DUSKLIGHT_VERSION "b245c6bef8b4a370afb2453104a585dd41c97676")
@@ -78,6 +81,10 @@ target_include_directories(twilight_visuals PRIVATE
     "${DUSKLIGHT_DIR}/src"
     "${DUSKLIGHT_BUILD_DIR}/_deps/rmlui-src/Include"
     "${_twilight_visuals_sdl_include_dir}")
+
+if (TWILIGHT_BUNDLED_ANIMATION_BACKUP)
+    target_compile_definitions(twilight_visuals PRIVATE TWILIGHT_BUNDLED_ANIMATION_BACKUP=1)
+endif ()
 
 # MSVC keeps __cplusplus at 199711L unless this conformance switch is enabled.
 # Dusklight's Dolphin compatibility headers use that macro to decide whether

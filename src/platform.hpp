@@ -13,4 +13,9 @@ std::filesystem::path executable_directory();
 // Android maps this to Dusklight's persistent per-mod data directory.
 std::filesystem::path custom_music_directory();
 
+// Return the preferred executable-adjacent directory for external test
+// animations. Desktop builds place this beside the game executable; Android
+// uses the persistent per-mod data directory.
+std::filesystem::path custom_animation_directory();
+
 }  // namespace twilight_visuals::platform

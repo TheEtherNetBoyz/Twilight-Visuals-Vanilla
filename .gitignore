@@ -16,6 +16,10 @@
 /res/music/*
 !/res/music/README.md
 
+# User-supplied converted animation files and local bundled-animation backup
+/res/animations/
+/local-animation-backup/
+
 # IDE and operating-system files
 /.vs/
 /.vscode/
@@ -25,3 +29,6 @@
 Thumbs.db
 ANIMATION_RETARGETING_README.md
 ANIMATION_CONVERSION_CODEX_PROMPT.md
+
+# Standalone animation converter is maintained outside this mod repository
+/tools/animation_converter/

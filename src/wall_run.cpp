@@ -2,6 +2,8 @@
 
 #include "runtime.hpp"
 #include "running.hpp"
+#include "platform.hpp"
+#include "service_refs.hpp"
 #include "d/actor/d_a_alink.h"
 #include "d/d_com_inf_game.h"
 #include "mods/service.hpp"
@@ -13,6 +15,10 @@
 #include "animation_validation.h"
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <system_error>
+#include <vector>
 
 namespace twilight_visuals::wall_run {
 namespace {
@@ -27,6 +33,8 @@ DEFINE_HOOK(&daAlink_c::procHangWallCatch, HangWallCatch);
 struct Clip {
     ResourceBuffer buffer = RESOURCE_BUFFER_INIT;
     mDoExt_transAnmBas animation{nullptr};
+    std::vector<unsigned char> externalData;
+    bool external = false;
     bool ready = false;
 };
 
@@ -90,11 +98,47 @@ bool loadClip(Clip& clip, const char* path) {
     return true;
 }
 
+bool loadExternalClip(Clip& clip, const char* filename) {
+    const auto adjacentDirectory = platform::custom_animation_directory();
+    if (adjacentDirectory.empty()) return false;
+
+    std::error_code createError;
+    std::filesystem::create_directories(adjacentDirectory, createError);
+    const auto path = adjacentDirectory / filename;
+    std::ifstream stream(path, std::ios::binary | std::ios::ate);
+    if (!stream) return false;
+    const std::streamsize size = stream.tellg();
+    if (size <= 0) return false;
+    stream.seekg(0, std::ios::beg);
+    clip.externalData.resize(static_cast<std::size_t>(size));
+    if (!stream.read(reinterpret_cast<char*>(clip.externalData.data()), size)) {
+        clip.externalData.clear();
+        return false;
+    }
+    if (!ss::validBck(clip.externalData.data(), clip.externalData.size())) {
+        clip.externalData.clear();
+        svc_log->warn(mod_ctx, "Rejected invalid external test BCK.");
+        return false;
+    }
+    clip.buffer.data = clip.externalData.data();
+    clip.buffer.size = clip.externalData.size();
+    J3DAnmLoaderDataBase::setResource(&clip.animation, clip.buffer.data);
+    clip.external = true;
+    clip.ready = true;
+    const std::string message = "Loaded external test animation: " + path.string();
+    svc_log->info(mod_ctx, message.c_str());
+    return true;
+}
+
 void freeClips() {
     wallClip.ready = false;
     ledgeGrabClip.ready = false;
-    svc_resource->free(mod_ctx, &wallClip.buffer);
-    svc_resource->free(mod_ctx, &ledgeGrabClip.buffer);
+    for (Clip* clip : {&wallClip, &ledgeGrabClip}) {
+        if (!clip->external) svc_resource->free(mod_ctx, &clip->buffer);
+        clip->externalData.clear();
+        clip->buffer = RESOURCE_BUFFER_INIT;
+        clip->external = false;
+    }
 }
 
 bool customAnimation(daAlink_c* p) {
@@ -413,8 +457,14 @@ HookAction jumpPre(ModContext*, void* args, void* result, void*) {
 
 void initialize() {
     if (installed) return;
-    if (loadClip(wallClip, "animations/wall_run.bck") &&
-        loadClip(ledgeGrabClip, "animations/ledge_grab.bck")) {
+#if defined(TWILIGHT_BUNDLED_ANIMATION_BACKUP)
+    const bool clipsReady = loadClip(wallClip, "animations/wall_run.bck") &&
+        loadClip(ledgeGrabClip, "animations/ledge_grab.bck");
+#else
+    const bool clipsReady = loadExternalClip(wallClip, "wall_run.bck") &&
+        loadExternalClip(ledgeGrabClip, "ledge_grab.bck");
+#endif
+    if (clipsReady) {
         const bool hooksOk =
             mods::hook::add_pre<Move>(movePre) == MOD_OK &&
             mods::hook::add_pre<Wait>(movePre) == MOD_OK &&
