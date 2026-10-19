@@ -36,14 +36,115 @@ bool palace_dark_hour() {
            std::strncmp(stage, "D_MN08", 6) == 0;
 }
 
-void draw_legacy_bloom(mDoGph_gInf_c::bloom_c* bloom) {
+u8 s_bloomScratch;
+
+void smooth_bloom(GXTexObj* texture, void* buffer, u16 width, u16 height,
+                  u16 renderWidth, u16 renderHeight, int radius) {
+    TGXTexObj temporary;
+    GXInitTexObj(&temporary, &s_bloomScratch, width, height, GX_TF_RGBA8,
+                 GX_CLAMP, GX_CLAMP, GX_FALSE);
+    GXInitTexObjLOD(&temporary, GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f,
+                    GX_FALSE, GX_FALSE, GX_ANISO_1);
+
+    // Keep the quarter-resolution image intact for the eighth-resolution blend.
+    GXSetViewportRender(0, renderHeight / 2, width, height, 0, 1);
+    GXSetScissorRender(0, renderHeight / 2, width, height);
+    GXSetTexCopySrc(0, renderHeight / 2, width, height);
+    GXSetTexCopyDst(width, height, GX_TF_RGBA8, GX_FALSE);
+    const int taps = radius * 2 + 1;
+    for (int axis = 0; axis < 2; ++axis) {
+        // dusk-mfb attenuates each of its three horizontal copy filters by cbrt(0.6).
+        const int total = axis == 0 ? 215 : 255;
+        const u8 weight = total / taps;
+        const int remainder = total - weight * taps;
+        GXSetTevKColor(GX_KCOLOR0, {weight, weight, weight, weight});
+        const u8 extra = weight + 1;
+        GXSetTevKColor(GX_KCOLOR1, {extra, extra, extra, extra});
+        GXLoadTexObj(axis == 0 ? texture : &temporary, GX_TEXMAP0);
+
+        for (int first = 0; first < taps; first += GX_MAX_TEXCOORD) {
+            const int count = std::min(taps - first, static_cast<int>(GX_MAX_TEXCOORD));
+            GXSetNumTexGens(count);
+            GXSetNumTevStages(count);
+            GXSetBlendMode(first == 0 ? GX_BM_NONE : GX_BM_BLEND,
+                           GX_BL_ONE, GX_BL_ONE, GX_LO_OR);
+            for (int i = 0; i < count; ++i) {
+                const auto coord = static_cast<GXTexCoordID>(GX_TEXCOORD0 + i);
+                const auto stage = static_cast<GXTevStageID>(GX_TEVSTAGE0 + i);
+                const u32 matrix = GX_TEXMTX0 + i * 3;
+                const int tap = first + i - radius;
+                const f32 offset = static_cast<f32>(tap) / (axis == 0 ? width : height);
+                mDoMtx_stack_c::transS(axis == 0 ? offset : 0.0f,
+                                       axis == 1 ? offset : 0.0f, 0.0f);
+                GXLoadTexMtxImm(mDoMtx_stack_c::get(), matrix, GX_MTX2x4);
+                GXSetTexCoordGen(coord, GX_TG_MTX2x4, GX_TG_TEX0, matrix);
+                GXSetTevOrder(stage, coord, GX_TEXMAP0, GX_COLOR_NULL);
+                GXSetTevSwapMode(stage, GX_TEV_SWAP0, GX_TEV_SWAP0);
+                const bool roundUp = tap == 0 ? (remainder % 2 != 0)
+                                             : std::abs(tap) <= remainder / 2;
+                GXSetTevKColorSel(stage, roundUp ? GX_TEV_KCSEL_K1 : GX_TEV_KCSEL_K0);
+                GXSetTevColorIn(stage, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST,
+                                i == 0 ? GX_CC_ZERO : GX_CC_CPREV);
+                GXSetTevColorOp(stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+                GXSetTevAlphaIn(stage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_A0);
+                GXSetTevAlphaOp(stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+            }
+            mDoGph_drawFilterQuad(4, 4);
+        }
+        GXCopyTex(axis == 0 ? &s_bloomScratch : buffer, GX_FALSE);
+        GXPixModeSync();
+        GXInvalidateTexAll();
+    }
+    GXSetViewportRender(0, 0, renderWidth, renderHeight, 0, 1);
+    GXSetScissorRender(0, 0, renderWidth, renderHeight);
+    GXSetNumTexGens(1);
+    GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
+}
+
+void set_bloom_filter(mDoGph_gInf_c::bloom_c* bloom, f32 height) {
+    const f32 blur = bloom->mBlureSize * ((448.0f / height) / 6400.0f);
+    GXSetNumTexGens(8);
+    u32 matrix = 0x1e;
+    int angle = 0;
+    GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, 0x3c);
+    for (int tex_coord = static_cast<int>(GX_TEXCOORD1);
+         tex_coord < static_cast<int>(GX_MAX_TEXCOORD); ++tex_coord) {
+        GXSetTexCoordGen(static_cast<GXTexCoordID>(tex_coord), GX_TG_MTX2x4, GX_TG_TEX0, matrix);
+        mDoMtx_stack_c::transS((blur * cM_scos(angle)) * mDoGph_gInf_c::getInvScale(),
+                               blur * cM_ssin(angle), 0.0f);
+        GXLoadTexMtxImm(mDoMtx_stack_c::get(), matrix, GX_MTX2x4);
+        matrix += 3;
+        angle += 0x2492;
+    }
+
+    GXSetNumTevStages(8);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR_NULL);
+    GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_TEXC, GX_CC_A1, GX_CC_ZERO);
+    GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+    GXSetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    for (int stage = static_cast<int>(GX_TEVSTAGE1); stage < 8; ++stage) {
+        const auto tev_stage = static_cast<GXTevStageID>(stage);
+        GXSetTevOrder(tev_stage, static_cast<GXTexCoordID>(stage), GX_TEXMAP0, GX_COLOR_NULL);
+        GXSetTevColorIn(tev_stage, GX_CC_ZERO, GX_CC_TEXC, GX_CC_A1, GX_CC_CPREV);
+        GXSetTevColorOp(tev_stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+        GXSetTevAlphaIn(tev_stage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_A0);
+        GXSetTevAlphaOp(tev_stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    }
+}
+
+void draw_legacy_bloom(mDoGph_gInf_c::bloom_c* bloom, bool smooth) {
     const bool enabled = bloom->mEnable && bloom->m_buffer != nullptr;
     if (bloom->mMonoColor.a == 0 && !enabled) return;
 
-    const f32 width = JUTVideo::getManager()->getRenderWidth();
-    const f32 height = JUTVideo::getManager()->getRenderHeight();
-    GXSetViewportRender(0.0f, 0.0f, width, height, 0.0f, 1.0f);
-    GXSetScissorRender(0, 0, width, height);
+    const u32 renderWidth = JUTVideo::getManager()->getRenderWidth();
+    const u32 renderHeight = JUTVideo::getManager()->getRenderHeight();
+    const u32 scale = std::max(1u, renderHeight / FB_HEIGHT_BASE);
+    const int radius = std::max(1u, scale / 2);
+    const f32 width = smooth ? mDoGph_gInf_c::getWidth() * scale : renderWidth;
+    const f32 height = smooth ? mDoGph_gInf_c::getHeight() * scale : renderHeight;
+    GXSetViewportRender(0.0f, 0.0f, renderWidth, renderHeight, 0.0f, 1.0f);
+    GXSetScissorRender(0, 0, renderWidth, renderHeight);
     GXLoadTexObj(mDoGph_gInf_c::getFrameBufferTexObj(), GX_TEXMAP0);
     GXSetNumChans(0);
     GXSetNumTexGens(1);
@@ -87,6 +188,8 @@ void draw_legacy_bloom(mDoGph_gInf_c::bloom_c* bloom) {
     if (!enabled) return;
 
     GXCreateFrameBuffer(width, height);
+    GXSetViewportRender(0, 0, width, height, 0, 1);
+    GXSetScissorRender(0, 0, width, height);
     GXSetNumTevStages(3);
     GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR_NULL);
     GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_TEXC, GX_CC_TEXA, GX_CC_HALF, GX_CC_ZERO);
@@ -130,37 +233,11 @@ void draw_legacy_bloom(mDoGph_gInf_c::bloom_c* bloom) {
                  GX_CLAMP, GX_CLAMP, GX_FALSE);
     GXInitTexObjLOD(&quarter, GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f,
                     GX_FALSE, GX_FALSE, GX_ANISO_1);
+    if (smooth) smooth_bloom(&quarter, zbuffer, width / 4, height / 4, width, height, radius);
     GXLoadTexObj(&quarter, GX_TEXMAP0);
 
-    GXSetNumTexGens(8);
-    u32 matrix = 0x1e;
-    int angle = 0;
-    GXSetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, 0x3c);
-    for (int tex_coord = static_cast<int>(GX_TEXCOORD1);
-         tex_coord < static_cast<int>(GX_MAX_TEXCOORD); ++tex_coord) {
-        GXSetTexCoordGen(static_cast<GXTexCoordID>(tex_coord), GX_TG_MTX2x4, GX_TG_TEX0, matrix);
-        const f32 blur = bloom->mBlureSize * ((448.0f / height) / 6400.0f);
-        mDoMtx_stack_c::transS((blur * cM_scos(angle)) * mDoGph_gInf_c::getInvScale(),
-                               blur * cM_ssin(angle), 0.0f);
-        GXLoadTexMtxImm(mDoMtx_stack_c::get(), matrix, GX_MTX2x4);
-        matrix += 3;
-        angle += 0x2492;
-    }
-
-    GXSetNumTevStages(8);
-    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR_NULL);
-    GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_TEXC, GX_CC_A1, GX_CC_ZERO);
-    GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-    GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
-    GXSetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-    for (int stage = static_cast<int>(GX_TEVSTAGE1); stage < 8; ++stage) {
-        const auto tev_stage = static_cast<GXTevStageID>(stage);
-        GXSetTevOrder(tev_stage, static_cast<GXTexCoordID>(stage), GX_TEXMAP0, GX_COLOR_NULL);
-        GXSetTevColorIn(tev_stage, GX_CC_ZERO, GX_CC_TEXC, GX_CC_A1, GX_CC_CPREV);
-        GXSetTevColorOp(tev_stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-        GXSetTevAlphaIn(tev_stage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_A0);
-        GXSetTevAlphaOp(tev_stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-    }
+    set_bloom_filter(bloom, smooth ? mDoGph_gInf_c::getHeight() : height);
+    GXSetBlendMode(GX_BM_NONE, GX_BL_ZERO, GX_BL_ZERO, GX_LO_OR);
     GXPixModeSync();
     mDoGph_drawFilterQuad(1, 1);
 
@@ -178,6 +255,10 @@ void draw_legacy_bloom(mDoGph_gInf_c::bloom_c* bloom) {
                  GX_CLAMP, GX_CLAMP, GX_FALSE);
     GXInitTexObjLOD(&eighth, GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f,
                     GX_FALSE, GX_FALSE, GX_ANISO_1);
+    if (smooth) {
+        smooth_bloom(&eighth, zbuffer, width / 8, height / 8, width, height, radius);
+        set_bloom_filter(bloom, mDoGph_gInf_c::getHeight());
+    }
     GXLoadTexObj(&eighth, GX_TEXMAP0);
     GXSetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_OR);
     GXPixModeSync();
@@ -188,6 +269,7 @@ void draw_legacy_bloom(mDoGph_gInf_c::bloom_c* bloom) {
     GXSetTexCopySrc(0, 0, width / 4, height / 4);
     GXSetTexCopyDst(width / 4, height / 4, GX_TF_RGBA8, GX_FALSE);
     GXCopyTex(zbuffer, GX_FALSE);
+    if (smooth) smooth_bloom(&quarter, zbuffer, width / 4, height / 4, width, height, radius);
     GXRestoreFrameBuffer();
 
     GXLoadTexObj(&quarter, GX_TEXMAP0);
@@ -248,8 +330,8 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
     bloom->mEnable = 1;
     bloom->mBlendColor.a = scaled_u8(bloom->mBlendColor.a, gain);
 
-    if (mode == BloomMode::Classic) {
-        draw_legacy_bloom(bloom);
+    if (mode == BloomMode::Classic || mode == BloomMode::ClassicSmoothed) {
+        draw_legacy_bloom(bloom, mode == BloomMode::ClassicSmoothed);
         restore_bloom_state();
         return HOOK_SKIP_ORIGINAL;
     }
@@ -361,5 +443,8 @@ ModResult install_hooks() {
     if (result != MOD_OK) mods::hook::uninstall<BloomDraw>();
     return result;
 }
-void uninstall_hooks() { mods::hook::uninstall<BloomDraw>(); }
+void uninstall_hooks() {
+    mods::hook::uninstall<BloomDraw>();
+    GXDestroyCopyTex(&s_bloomScratch);
+}
 }
