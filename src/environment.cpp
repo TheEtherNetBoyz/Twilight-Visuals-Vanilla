@@ -6,6 +6,7 @@
 #include "environment_weather.hpp"
 
 #include "boundary.hpp"
+#include "runtime.hpp"
 
 #include "mods/service.hpp"
 #include "hook_api.hpp"
@@ -19,9 +20,16 @@ DEFINE_HOOK(&dScnKy_env_light_c::setLight, EnvironmentSetLight);
 DEFINE_HOOK(&dScnKy_env_light_c::setLight_bg, EnvironmentSetLightBg);
 DEFINE_HOOK(&dScnKy_env_light_c::setLight_actor, EnvironmentSetLightActor);
 
-
+s16* s_bloomPulse;
+bool (*s_isSimFrame)();
+thread_local bool s_restoreBloomPulse;
+thread_local s16 s_savedBloomPulse;
 
 void set_light_post(ModContext*, void* args, void*, void*) {
+    if (s_restoreBloomPulse) {
+        *s_bloomPulse = s_savedBloomPulse;
+        s_restoreBloomPulse = false;
+    }
     if (!palette::active()) return;
     auto* env = mods::arg<dScnKy_env_light_c*>(args, 0);
     palette::apply_scene_base(*env);
@@ -34,6 +42,11 @@ void set_light_post(ModContext*, void* args, void*, void*) {
 HookAction set_light_pre(ModContext*, void*, void*, void*) {
     if (palette::active()) boundary::begin_visual_environment();
     weather::apply();
+    s_restoreBloomPulse = visual_effects_active() &&
+        runtime_settings().bloomMode == BloomMode::ClassicSmoothed &&
+        !s_isSimFrame();
+    // Presentation redraws must not advance Classic's simulation-owned pulse.
+    if (s_restoreBloomPulse) s_savedBloomPulse = *s_bloomPulse;
     return HOOK_CONTINUE;
 }
 
@@ -67,7 +80,19 @@ void set_light_actor_post(ModContext*, void* args, void*, void*) {
 }  // namespace
 
 ModResult install_hooks() {
-    ModResult result = mods::hook::add_pre<EnvironmentSetLight>(set_light_pre);
+    void* address = nullptr;
+    HookSymbolFlags flags{};
+    const auto* hooks = twilight_hook_service();
+    ModResult result = hooks->resolve(mod_ctx, "S_fuwan_sin", &address, &flags);
+    if (result != MOD_OK) return result;
+    if (!(flags & HOOK_SYMBOL_DATA)) return MOD_UNAVAILABLE;
+    s_bloomPulse = static_cast<s16*>(address);
+    result = hooks->resolve(mod_ctx, "dusk::game_clock::is_sim_frame", &address, &flags);
+    if (result != MOD_OK) return result;
+    if (!(flags & HOOK_SYMBOL_CODE)) return MOD_UNAVAILABLE;
+    s_isSimFrame = reinterpret_cast<bool (*)()>(address);
+
+    result = mods::hook::add_pre<EnvironmentSetLight>(set_light_pre);
     if (result != MOD_OK) return result;
     result = mods::hook::add_post<EnvironmentSetLight>(set_light_post);
     if (result != MOD_OK) return result;
@@ -85,6 +110,10 @@ void area_reloaded() {
 }
 
 void uninstall_hooks() {
+    if (s_restoreBloomPulse) {
+        *s_bloomPulse = s_savedBloomPulse;
+        s_restoreBloomPulse = false;
+    }
     weather::restore();
     mods::hook::uninstall<EnvironmentSetLightActor>();
     mods::hook::uninstall<EnvironmentSetLightBg>();

@@ -40,8 +40,8 @@ constexpr std::array<const char*, 17> kSkyboxes{
 constexpr std::array<const char*, 9> kWeather{
     "Current", "Clear", "Rain", "Snow", "Lightning", "Wind Storm", "Snow Storm",
     "Heavy Fog", "Blood Rain"};
-constexpr std::array<const char*, 4> kBloomModes{
-    "Off (No Override)", "No Bloom", "Nvidia Shield", "Dusklight"};
+constexpr std::array<const char*, 5> kBloomModes{
+    "Off (No Override)", "No Bloom", "Nvidia Shield", "Dusklight", "Classic (MFB)"};
 constexpr std::array<const char*, 4> kMenuScalingModes{
     "Native Dusklight", "GameCube (MFB)", "Wii (MFB)", "Dusklight (MFB)"};
 constexpr std::array<const char*, 2> kLoadModes{"Normal", "Fast Loads (MFB)"};
@@ -361,7 +361,8 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     svc_ui->pane_add_section(mod_ctx, left, "MFB Settings");
     add_select(left, "Bloom Override Mode",
         "Choose the bloom implementation used by Twilight Visuals. Native Dusklight leaves "
-        "Dusklight's own bloom setting in control.",
+        "Dusklight's own bloom setting in control. Classic (MFB) renders Classic bloom at "
+        "high resolution with its original sample spacing and filters each bloom copy.",
         g_settings.bloomMode, kBloomModes);
     add_number(left, "Bloom Brightness",
         "Adjust the MFB bloom brightness multiplier independently from scene brightness.",

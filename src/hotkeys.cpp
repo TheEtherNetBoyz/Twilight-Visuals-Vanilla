@@ -285,8 +285,9 @@ const char* bloom_mode_name(int64_t mode) {
     switch (mode) {
     case 0: return "Native Dusklight";
     case 1: return "Off";
-    case 2: return "Classic (MFB)";
+    case 2: return "Nvidia Shield";
     case 3: return "Dusklight";
+    case 4: return "Classic (MFB)";
     default: return "Unknown";
     }
 }
@@ -385,7 +386,7 @@ void update() {
         svc_log->info(mod_ctx, next ? "Gyro Aim hotkey: On" : "Gyro Aim hotkey: Off");
     }
     if (pressed(Action::Bloom, 1)) {
-        const int64_t next = (get_int(settings().bloomMode, 0) + 1) % 4;
+        const int64_t next = (get_int(settings().bloomMode, 0) + 1) % 5;
         svc_config->set_int(mod_ctx, settings().bloomMode, next);
         show_activation(Action::Bloom, bloom_mode_name(next));
         svc_log->info(mod_ctx, "Bloom mode cycled by hotkey.");

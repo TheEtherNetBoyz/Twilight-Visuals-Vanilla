@@ -13,7 +13,7 @@ enum class Weather : std::int64_t {
     Current = 0, Clear, Rain, Snow, Lightning, WindStorm, SnowStorm, HeavyFog, BloodRain,
 };
 enum class BloomMode : std::int64_t {
-    Native = 0, Off, Classic, Dusklight,
+    Native = 0, Off, Classic, Dusklight, ClassicSmoothed,
 };
 enum class MenuScaling : std::int64_t {
     Native = 0, GameCube = 1, Wii = 2, Dusklight = 3,

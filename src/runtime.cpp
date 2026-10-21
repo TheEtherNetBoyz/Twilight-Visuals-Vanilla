@@ -76,7 +76,7 @@ void refresh_runtime_settings() {
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.musicVolume, 100), 0, 100)) /
         100.0f;
     g_runtime.bloomMode = static_cast<BloomMode>(
-        std::clamp<std::int64_t>(get_int(config.bloomMode, 0), 0, 3));
+        std::clamp<std::int64_t>(get_int(config.bloomMode, 0), 0, 4));
     g_runtime.bloomBrightness =
         static_cast<float>(std::clamp<std::int64_t>(
             get_int(config.bloomBrightness, 100), 0, 100)) / 100.0f;
