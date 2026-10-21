@@ -293,7 +293,9 @@ u8 scaled_u8(u8 value, f32 scale) {
 
 HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
     auto* bloom = mods::arg<mDoGph_gInf_c::bloom_c*>(args, 0);
-    if (bloom == nullptr || !visual_effects_active()) {
+    // Bloom Override is an independent MFB setting. Keep it available when
+    // Visual Style is disabled, while still respecting the mod's master state.
+    if (bloom == nullptr || !active()) {
         return HOOK_CONTINUE;
     }
 

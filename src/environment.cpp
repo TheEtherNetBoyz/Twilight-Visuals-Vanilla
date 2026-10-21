@@ -43,7 +43,7 @@ void set_light_post(ModContext*, void* args, void*, void*) {
 HookAction set_light_pre(ModContext*, void*, void*, void*) {
     if (palette::active()) boundary::begin_visual_environment();
     weather::apply();
-    s_restoreBloomPulse = s_bloomPulseGuardAvailable && visual_effects_active() &&
+    s_restoreBloomPulse = s_bloomPulseGuardAvailable && active() &&
         runtime_settings().bloomMode == BloomMode::ClassicSmoothed &&
         !s_isSimFrame();
     // Presentation redraws must not advance Classic's simulation-owned pulse.
