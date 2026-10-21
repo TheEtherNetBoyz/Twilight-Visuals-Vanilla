@@ -113,6 +113,8 @@ void get_dark_hour_fog_value(ModContext*, void*, UiControlValue* outValue);
 void adjust_dark_hour_fog_value(ModContext*, void*, const UiControlValue* value);
 ModResult build_visual_style_group(
     ModContext*, UiElementHandle, void*, ModError*);
+ModResult build_brightness_group(
+    ModContext*, UiElementHandle, void*, ModError*);
 
 struct StyleButtonContext {
     int64_t value;
@@ -340,25 +342,19 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Enable the selected visual style's lighting, tint, bloom, sky, particles, visual post-processing, "
         "and custom music. The master mod toggle and non-visual features remain independent.",
         g_settings.visualEffects);
-    add_toggle(left, "Twilight Camera Light",
-        "Use Twilight's camera-following spotlight. Disable this to test without the moving "
-        "bright and dark bands while retaining the sky, weather, particles, bloom, and static lighting.",
-        g_settings.twilightCameraLight);
     refresh_style_group_label();
     UiGroupDesc visualStyle = UI_GROUP_DESC_INIT;
     visualStyle.label = g_styleGroupLabel.c_str();
     visualStyle.build = build_visual_style_group;
     svc_ui->pane_add_group(mod_ctx, left, right, &visualStyle, &g_styleGroupControl);
-    add_number(left, "Brightness",
-        "Adjust complete environment lighting and bloom intensity.", g_settings.brightness, 0,
-        120, 5, "%");
-    add_toggle(left, "Per-Area Brightness",
-        "Apply the separately saved brightness percentage for the loaded area.",
-        g_settings.perAreaBrightness);
-    add_number(left, "Current Area Brightness",
-        "Adjust the loaded stage and room. The displayed value follows room changes and is "
-        "saved in the separate per-area brightness file.",
-        g_settings.currentAreaBrightness, 25, 150, 5, "%");
+    add_toggle(left, "Twilight Camera Light",
+        "Use Twilight's camera-following spotlight. Disable this to test without the moving "
+        "bright and dark bands while retaining the sky, weather, particles, bloom, and static lighting.",
+        g_settings.twilightCameraLight);
+    UiGroupDesc brightness = UI_GROUP_DESC_INIT;
+    brightness.label = "Brightness Settings";
+    brightness.build = build_brightness_group;
+    svc_ui->pane_add_group(mod_ctx, left, right, &brightness, nullptr);
     add_select(left, "Skybox", "Choose the authored sky palette used by every Twilight Visuals style.",
         g_settings.skybox, kSkyboxes);
     add_toggle(left, "Exclude Palace of Twilight",
@@ -464,6 +460,21 @@ ModResult build_visual_style_group(
         svc_ui->elem_set_visible(mod_ctx, g_chromaticAberrationControl,
                                  get_int(g_settings.style, 0) == 2);
     }
+    return MOD_OK;
+}
+
+ModResult build_brightness_group(
+    ModContext*, UiElementHandle pane, void*, ModError*) {
+    add_number(pane, "Brightness",
+        "Adjust complete environment lighting and bloom intensity.", g_settings.brightness, 0,
+        120, 5, "%");
+    add_toggle(pane, "Per-Area Brightness",
+        "Apply the separately saved brightness percentage for the loaded area.",
+        g_settings.perAreaBrightness);
+    add_number(pane, "Current Area Brightness",
+        "Adjust the loaded stage and room. The displayed value follows room changes and is "
+        "saved in the separate per-area brightness file.",
+        g_settings.currentAreaBrightness, 25, 150, 5, "%");
     return MOD_OK;
 }
 
