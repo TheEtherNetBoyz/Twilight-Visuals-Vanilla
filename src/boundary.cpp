@@ -33,6 +33,7 @@ static bool s_camera_light_visual_scope = false;
 static bool s_environment_execute_visual_scope = false;
 static bool s_midnight_lighting_time_saved = false;
 static f32 s_midnight_lighting_real_time = 0.0f;
+static bool s_environment_color_init_hook = false;
 
 struct BackgroundLightState {
     dKy_tevstr_c* tev{};
@@ -347,8 +348,22 @@ void environment_color_init_post(ModContext*, void*, void*, void*) {
 void initialize() {
     restoring = false;
     commit();
-    mods::hook::add_pre<EnvironmentColorInit>(environment_color_init_pre);
-    mods::hook::add_post<EnvironmentColorInit>(environment_color_init_post);
+    void* environmentColorInit = nullptr;
+    HookSymbolFlags environmentColorInitFlags{};
+    const auto* hooks = twilight_hook_service();
+    if (hooks != nullptr &&
+        hooks->resolve(mod_ctx, "d/d_kankyo.cpp#envcolor_init", &environmentColorInit,
+                       &environmentColorInitFlags) == MOD_OK &&
+        (environmentColorInitFlags & HOOK_SYMBOL_CODE)) {
+        const ModResult preResult =
+            mods::hook::add_pre<EnvironmentColorInit>(environment_color_init_pre);
+        const ModResult postResult = preResult == MOD_OK
+            ? mods::hook::add_post<EnvironmentColorInit>(environment_color_init_post)
+            : preResult;
+        s_environment_color_init_hook = preResult == MOD_OK && postResult == MOD_OK;
+        if (!s_environment_color_init_hook && preResult == MOD_OK)
+            mods::hook::uninstall<EnvironmentColorInit>();
+    }
     mods::hook::add_pre<EnvironmentExecute>(environment_execute_pre);
     mods::hook::add_post<EnvironmentExecute>(environment_execute_post);
     mods::hook::add_post<EnvironmentSetDaytime>(environment_set_daytime_post);
@@ -477,6 +492,8 @@ void shutdown() {
     mods::hook::uninstall<SettingTevStruct>();
     mods::hook::uninstall<NativeDarkworldCheck>();
     mods::hook::uninstall<EnvironmentExecute>();
-    mods::hook::uninstall<EnvironmentColorInit>();
+    if (s_environment_color_init_hook)
+        mods::hook::uninstall<EnvironmentColorInit>();
+    s_environment_color_init_hook = false;
 }
 }
