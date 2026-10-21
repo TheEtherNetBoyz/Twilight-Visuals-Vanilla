@@ -26,6 +26,8 @@ Settings g_settings;
 UiWindowHandle g_settingsWindow{};
 UiWindowHandle g_faceWindow{};
 UiMenuTabHandle g_quickMenuTab{};
+UiElementHandle g_styleGroupControl{};
+UiElementHandle g_chromaticAberrationControl{};
 ConfigSubscriptionHandle g_areaBrightnessSubscription{};
 std::string g_areaEditorKey;
 std::map<std::string, int64_t> g_areaBrightness;
@@ -109,6 +111,42 @@ void add_control(UiElementHandle pane, UiControlDesc& control) {
 void open_face_tuner(ModContext*, void*);
 void get_dark_hour_fog_value(ModContext*, void*, UiControlValue* outValue);
 void adjust_dark_hour_fog_value(ModContext*, void*, const UiControlValue* value);
+ModResult build_visual_style_group(
+    ModContext*, UiElementHandle, void*, ModError*);
+
+struct StyleButtonContext {
+    int64_t value;
+};
+
+std::array<StyleButtonContext, kStyles.size()> g_styleButtons{{{0}, {1}, {2}, {3}}};
+std::string g_styleGroupLabel;
+
+void refresh_style_group_label() {
+    const int64_t style = std::clamp<int64_t>(get_int(g_settings.style, 0), 0,
+                                               kStyles.size() - 1);
+    g_styleGroupLabel = std::string("Visual Style & Music • ") + kStyles[style];
+    if (g_styleGroupControl != 0 &&
+        SERVICE_HAS(svc_ui, UiService, control_set_label)) {
+        svc_ui->control_set_label(mod_ctx, g_styleGroupControl, g_styleGroupLabel.c_str());
+    }
+}
+
+bool style_button_selected(ModContext*, void* userData) {
+    const auto* context = static_cast<const StyleButtonContext*>(userData);
+    return context != nullptr && get_int(g_settings.style, 0) == context->value;
+}
+
+void select_visual_style(ModContext*, void* userData) {
+    const auto* context = static_cast<const StyleButtonContext*>(userData);
+    if (context == nullptr) return;
+    svc_config->set_int(mod_ctx, g_settings.style, context->value);
+    refresh_style_group_label();
+    if (g_chromaticAberrationControl != 0 &&
+        SERVICE_HAS(svc_ui, UiService, elem_set_visible)) {
+        svc_ui->elem_set_visible(mod_ctx, g_chromaticAberrationControl,
+                                 context->value == 2);
+    }
+}
 
 void add_button(UiElementHandle pane, const char* label, const char* help,
     UiPressedFn onPressed) {
@@ -294,7 +332,6 @@ void sync_current_area_brightness_editor() {
 
 ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     UiElementHandle right, void*, ModError*) {
-    (void)right;
     svc_ui->pane_add_section(mod_ctx, left, "Twilight Visuals");
     add_toggle(left, "Enable Twilight Visuals",
         "Apply Twilight visuals, particles, enemy variants, and the selected style anywhere.",
@@ -307,11 +344,11 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Use Twilight's camera-following spotlight. Disable this to test without the moving "
         "bright and dark bands while retaining the sky, weather, particles, bloom, and static lighting.",
         g_settings.twilightCameraLight);
-    add_select(left, "Visual Style & Music",
-        "Select the complete environment style and its matching music. Normal Twilight and Black "
-        "and White use Palace music; Astral Plane and The Dark Hour use their matching tracks.",
-        g_settings.style,
-        kStyles);
+    refresh_style_group_label();
+    UiGroupDesc visualStyle = UI_GROUP_DESC_INIT;
+    visualStyle.label = g_styleGroupLabel.c_str();
+    visualStyle.build = build_visual_style_group;
+    svc_ui->pane_add_group(mod_ctx, left, right, &visualStyle, &g_styleGroupControl);
     add_number(left, "Brightness",
         "Adjust complete environment lighting and bloom intensity.", g_settings.brightness, 0,
         120, 5, "%");
@@ -322,9 +359,6 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
         "Adjust the loaded stage and room. The displayed value follows room changes and is "
         "saved in the separate per-area brightness file.",
         g_settings.currentAreaBrightness, 25, 150, 5, "%");
-    add_number(left, "Astral Chromatic Aberration",
-        "Adjust Astral Plane red/blue edge separation.", g_settings.chromaticAberration, 0, 200,
-        5, "%");
     add_select(left, "Skybox", "Choose the authored sky palette used by every Twilight Visuals style.",
         g_settings.skybox, kSkyboxes);
     add_toggle(left, "Exclude Palace of Twilight",
@@ -394,10 +428,51 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     return MOD_OK;
 }
 
+ModResult build_visual_style_group(
+    ModContext*, UiElementHandle pane, void*, ModError*) {
+    g_chromaticAberrationControl = 0;
+    for (size_t i = 0; i < kStyles.size(); ++i) {
+        UiControlDesc style = UI_CONTROL_DESC_INIT;
+        style.kind = UI_CONTROL_BUTTON;
+        style.label = kStyles[i];
+        style.help_rml =
+            "Select the complete environment style and its matching music.";
+        style.on_pressed = select_visual_style;
+        style.is_selected = style_button_selected;
+        style.user_data = &g_styleButtons[i];
+        add_control(pane, style);
+    }
+
+    svc_ui->pane_add_text(mod_ctx, pane,
+        "Normal Twilight and Black and White use Palace music; Astral Plane and The Dark Hour "
+        "use their matching tracks.", nullptr);
+
+    UiControlDesc aberration = UI_CONTROL_DESC_INIT;
+    aberration.kind = UI_CONTROL_NUMBER;
+    aberration.label = "Astral Chromatic Aberration";
+    aberration.help_rml = "Adjust Astral Plane red/blue edge separation.";
+    aberration.binding = UI_BINDING_CONFIG_VAR;
+    aberration.config_var = g_settings.chromaticAberration;
+    aberration.min = 0;
+    aberration.max = 200;
+    aberration.step = 5;
+    aberration.suffix = "%";
+    const ModResult result = svc_ui->pane_add_control(
+        mod_ctx, pane, &aberration, &g_chromaticAberrationControl);
+    if (result != MOD_OK) return result;
+    if (SERVICE_HAS(svc_ui, UiService, elem_set_visible)) {
+        svc_ui->elem_set_visible(mod_ctx, g_chromaticAberrationControl,
+                                 get_int(g_settings.style, 0) == 2);
+    }
+    return MOD_OK;
+}
+
 void settings_window_closed(ModContext*, UiWindowHandle, void*) {
     commit_current_area_brightness_editor();
     g_areaEditorKey.clear();
     g_settingsWindow = 0;
+    g_styleGroupControl = 0;
+    g_chromaticAberrationControl = 0;
 }
 
 void open_settings_window(ModContext*, void*) {
