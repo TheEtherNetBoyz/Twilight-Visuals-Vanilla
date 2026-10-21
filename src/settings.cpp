@@ -333,7 +333,7 @@ void sync_current_area_brightness_editor() {
 ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     UiElementHandle right, void*, ModError*) {
     svc_ui->pane_add_section(mod_ctx, left, "Twilight Visuals");
-    add_toggle(left, "Enable Twilight Visuals",
+    add_toggle(left, "Enable Mod",
         "Apply Twilight visuals, particles, enemy variants, and the selected style anywhere.",
         g_settings.enabled);
     add_toggle(left, "Enable Visual Style & Music",
