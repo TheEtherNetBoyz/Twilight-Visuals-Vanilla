@@ -115,6 +115,8 @@ ModResult build_visual_style_group(
     ModContext*, UiElementHandle, void*, ModError*);
 ModResult build_brightness_group(
     ModContext*, UiElementHandle, void*, ModError*);
+ModResult build_skybox_weather_group(
+    ModContext*, UiElementHandle, void*, ModError*);
 
 struct StyleButtonContext {
     int64_t value;
@@ -210,6 +212,20 @@ void add_select(UiElementHandle pane, const char* label, const char* help, Confi
     const std::array<const char*, N>& options) {
     UiControlDesc control = UI_CONTROL_DESC_INIT;
     control.kind = UI_CONTROL_SELECT;
+    control.label = label;
+    control.help_rml = help;
+    control.binding = UI_BINDING_CONFIG_VAR;
+    control.config_var = var;
+    control.options = options.data();
+    control.option_count = options.size();
+    add_control(pane, control);
+}
+
+template <size_t N>
+void add_dropdown(UiElementHandle pane, const char* label, const char* help, ConfigVarHandle var,
+    const std::array<const char*, N>& options) {
+    UiControlDesc control = UI_CONTROL_DESC_INIT;
+    control.kind = UI_CONTROL_DROPDOWN;
     control.label = label;
     control.help_rml = help;
     control.binding = UI_BINDING_CONFIG_VAR;
@@ -355,13 +371,13 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     brightness.label = "Brightness Settings";
     brightness.build = build_brightness_group;
     svc_ui->pane_add_group(mod_ctx, left, right, &brightness, nullptr);
-    add_select(left, "Skybox", "Choose the authored sky palette used by every Twilight Visuals style.",
-        g_settings.skybox, kSkyboxes);
+    UiGroupDesc skyboxWeather = UI_GROUP_DESC_INIT;
+    skyboxWeather.label = "Skybox & Weather";
+    skyboxWeather.build = build_skybox_weather_group;
+    svc_ui->pane_add_group(mod_ctx, left, right, &skyboxWeather, nullptr);
     add_toggle(left, "Exclude Palace of Twilight",
         "Keep the Palace of Twilight's native visuals and music instead of applying the selected "
         "Twilight Visuals preset.", g_settings.excludePalaceOfTwilight);
-    add_select(left, "Weather", "Override weather independently from the visual toggle.",
-        g_settings.weather, kWeather);
 
     svc_ui->pane_add_section(mod_ctx, left, "Music");
     add_number(left, "Custom Music Volume",
@@ -475,6 +491,17 @@ ModResult build_brightness_group(
         "Adjust the loaded stage and room. The displayed value follows room changes and is "
         "saved in the separate per-area brightness file.",
         g_settings.currentAreaBrightness, 25, 150, 5, "%");
+    return MOD_OK;
+}
+
+ModResult build_skybox_weather_group(
+    ModContext*, UiElementHandle pane, void*, ModError*) {
+    add_dropdown(pane, "Skybox",
+        "Choose the authored sky palette used by every Twilight Visuals style.",
+        g_settings.skybox, kSkyboxes);
+    add_dropdown(pane, "Weather",
+        "Override weather independently from the visual toggle.",
+        g_settings.weather, kWeather);
     return MOD_OK;
 }
 
