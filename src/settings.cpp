@@ -53,8 +53,12 @@ constexpr std::array<const char*, 2> kBloomTintSources{"Vanilla", "Neutral"};
 constexpr std::array<const char*, 2> kBloomActivations{"Vanilla", "Everywhere"};
 constexpr std::array<const char*, 3> kBloomThresholdSources{"Vanilla", "Custom", "Normalized"};
 constexpr std::array<const char*, 3> kBloomResolutions{"Full", "Half", "Quarter"};
-constexpr std::array<const char*, 7> kBloomPresets{
-    "Custom", "Faithful", "Faithful (Cold)", "Modern", "Modern (Cold)", "Hybrid", "Haze"};
+constexpr std::array<const char*, 8> kBloomPresets{
+    "Custom", "Faithful", "Faithful (Cold)", "Modern", "Modern (Cold)", "Hybrid", "TPHD", "Haze"};
+constexpr std::array<const char*, 4> kBloomBrightnessMetrics{
+    "Blue Weighted", "Luma (Rec. 601)", "Luma (Rec. 709)", "Maximum Channel"};
+constexpr std::array<const char*, 2> kBloomFilteringSpaces{
+    "Linear Light", "Display Encoded"};
 constexpr std::array<const char*, 4> kMenuScalingModes{
     "Native Dusklight", "GameCube (MFB)", "Wii (MFB)", "Dusklight (MFB)"};
 constexpr std::array<const char*, 2> kLoadModes{"Normal", "Fast Loads (MFB)"};
@@ -548,12 +552,10 @@ void set_bloom_profile(int64_t intensity, int64_t size, int64_t diffusion,
     svc_config->set_int(mod_ctx, g_settings.bloomSceneDarkening, darkening);
 }
 
-void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
-    const ConfigVarValue*, void*) {
-    if (value == nullptr || value->type != CONFIG_VAR_INT) return;
-    if (value->int_value < 1 || value->int_value > 6) return;
+void apply_bloom_preset(int64_t preset) {
+    if (preset < 1 || preset > 7) return;
 
-    // Begin from Better Bloom 2.9.1's option defaults. Presets intentionally leave
+    // Begin from Better Bloom 2.10.0's option defaults. Presets intentionally leave
     // activation, threshold overrides, blend mode and resolution untouched.
     set_bloom_profile(100, 100, 0, 100, 100, 100);
     svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 50);
@@ -568,16 +570,32 @@ void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* va
     svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 100);
     svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 0);
     svc_config->set_int(mod_ctx, g_settings.bloomHighlightDesaturation, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomGainSource, 0);
+    svc_config->set_bool(mod_ctx, g_settings.bloomAutoCompensation, true);
     svc_config->set_int(mod_ctx, g_settings.bloomTintSource, 0);
     svc_config->set_int(mod_ctx, g_settings.bloomTintRed, 100);
     svc_config->set_int(mod_ctx, g_settings.bloomTintGreen, 100);
     svc_config->set_int(mod_ctx, g_settings.bloomTintBlue, 100);
     svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 100);
     svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, true);
-    switch (value->int_value) {
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseActivation, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulsePeriod, 1457);
+    svc_config->set_bool(mod_ctx, g_settings.bloomPulseIrregular, true);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseSize, 20);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseIntensity, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseTransition, 500);
+    svc_config->set_int(mod_ctx, g_settings.bloomBrightnessMetric, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomPreDiffusionGain, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomSourceLimit, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomFilteringSpace, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomHorizontalSpread, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomVerticalSpread, 100);
+    switch (preset) {
     case 1: // Faithful
     case 2: // Faithful (Cold)
-        set_bloom_profile(600, 100, 73, 100, 24, 100);
+        // Upstream pre-compensates these preset intensities because automatic
+        // response compensation is enabled by default.
+        set_bloom_profile(158, 100, 73, 100, 24, 100);
         svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 0);
         svc_config->set_int(mod_ctx, g_settings.bloomCoreWidth, 116);
         svc_config->set_int(mod_ctx, g_settings.bloomInnerWidth, 451);
@@ -587,7 +605,7 @@ void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* va
         svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 176);
         svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 95);
         svc_config->set_int(mod_ctx, g_settings.bloomHighlightDesaturation, 100);
-        if (value->int_value == 2) {
+        if (preset == 2) {
             svc_config->set_int(mod_ctx, g_settings.bloomTintSource, 1);
             svc_config->set_int(mod_ctx, g_settings.bloomTintRed, 52);
             svc_config->set_int(mod_ctx, g_settings.bloomTintGreen, 47);
@@ -597,12 +615,10 @@ void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* va
     case 3: // Modern
         set_bloom_profile(129, 50, 29, 100, 40, 0);
         svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 47);
-        svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 0);
         break;
     case 4: // Modern (Cold)
         set_bloom_profile(100, 50, 29, 100, 50, 100);
         svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 50);
-        svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 0);
         svc_config->set_int(mod_ctx, g_settings.bloomTintSource, 1);
         svc_config->set_int(mod_ctx, g_settings.bloomTintRed, 100);
         svc_config->set_int(mod_ctx, g_settings.bloomTintGreen, 96);
@@ -610,7 +626,7 @@ void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* va
         svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, false);
         break;
     case 5: // Hybrid
-        set_bloom_profile(680, 100, 73, 100, 24, 100);
+        set_bloom_profile(179, 100, 73, 100, 24, 100);
         svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 0);
         svc_config->set_int(mod_ctx, g_settings.bloomCoreWidth, 116);
         svc_config->set_int(mod_ctx, g_settings.bloomInnerWidth, 451);
@@ -622,7 +638,23 @@ void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* va
         svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 95);
         svc_config->set_int(mod_ctx, g_settings.bloomHighlightDesaturation, 100);
         break;
-    case 6: // Haze
+    case 6: // TPHD
+        set_bloom_profile(224, 100, 0, 100, 60, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomCoreContribution, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerWidth, 454);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerContribution, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomOuterContribution, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomHaloContribution, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightDesaturation, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomBrightnessMetric, 1);
+        svc_config->set_int(mod_ctx, g_settings.bloomPreDiffusionGain, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomSourceLimit, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomFilteringSpace, 1);
+        svc_config->set_int(mod_ctx, g_settings.bloomHorizontalSpread, 160);
+        break;
+    case 7: // Haze
         set_bloom_profile(135, 100, 45, 85, 40, 0);
         svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 70);
         svc_config->set_int(mod_ctx, g_settings.bloomCoreContribution, 15);
@@ -633,11 +665,16 @@ void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* va
         svc_config->set_int(mod_ctx, g_settings.bloomHaloContribution, 100);
         svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 120);
         svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 130);
-        svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 0);
         svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, false);
         break;
     default: break;
     }
+}
+
+void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
+    const ConfigVarValue*, void*) {
+    if (value == nullptr || value->type != CONFIG_VAR_INT) return;
+    apply_bloom_preset(value->int_value);
 }
 
 void restore_bloom_profile(ModContext*, void*) {
@@ -652,16 +689,29 @@ void restore_bloom_profile(ModContext*, void*) {
 
 void restore_better_bloom_defaults(ModContext*, void*) {
     svc_config->set_bool(mod_ctx, g_settings.bloomEnabled, true);
-    set_bloom_profile(100, 100, 0, 100, 100, 0);
+    set_bloom_profile(100, 100, 0, 100, 100, 100);
     restore_bloom_profile(mod_ctx, nullptr);
     svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 50);
     svc_config->set_int(mod_ctx, g_settings.bloomThresholdSource, 0);
     svc_config->set_int(mod_ctx, g_settings.bloomOverrideThreshold, 100);
     svc_config->set_int(mod_ctx, g_settings.bloomThresholdNormalization, 50);
-    svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, false);
-    svc_config->set_int(mod_ctx, g_settings.bloomPulsePeriod, 4000);
+    svc_config->set_int(mod_ctx, g_settings.bloomGainSource, 0);
+    svc_config->set_bool(mod_ctx, g_settings.bloomAutoCompensation, true);
+    svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, true);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseActivation, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulsePeriod, 1457);
+    svc_config->set_bool(mod_ctx, g_settings.bloomPulseIrregular, true);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseSize, 20);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseIntensity, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulseTransition, 500);
     svc_config->set_int(mod_ctx, g_settings.bloomBlendMode, 0);
     svc_config->set_int(mod_ctx, g_settings.bloomResolution, 1);
+    svc_config->set_int(mod_ctx, g_settings.bloomBrightnessMetric, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomPreDiffusionGain, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomSourceLimit, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomFilteringSpace, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomHorizontalSpread, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomVerticalSpread, 100);
 }
 
 ModResult build_better_bloom_group(
@@ -680,6 +730,13 @@ ModResult build_better_bloom_group(
         g_settings.bloomSize, 0, 4000, 5, "%");
     add_number(pane, "Soft Threshold", "Soften the bloom cutoff around bright pixels.",
         g_settings.bloomThreshold, 0, 667, 1, "%");
+    svc_ui->pane_add_section(mod_ctx, pane, "Bloom Source");
+    add_dropdown(pane, "Brightness Metric", "Choose how source-pixel brightness is measured.",
+        g_settings.bloomBrightnessMetric, kBloomBrightnessMetrics);
+    add_number(pane, "Pre-Diffusion Gain", "Apply gain before the bloom is diffused.",
+        g_settings.bloomPreDiffusionGain, 0, 100, 1, "%");
+    add_number(pane, "Source Highlight Limit", "Limit source highlights before diffusion; 0% disables it.",
+        g_settings.bloomSourceLimit, 0, 4000, 5, "%");
     svc_ui->pane_add_section(mod_ctx, pane, "Glow Profile");
     add_number(pane, "Diffusion",
         "Adjust how strongly the filtered glow spreads into the final bloom image.",
@@ -692,6 +749,12 @@ ModResult build_better_bloom_group(
     add_number(pane, "Outer Glow Contribution", "Outer glow strength.", g_settings.bloomOuterContribution, 0, 2000, 5, "%");
     add_number(pane, "Halo Width", "Wide halo width.", g_settings.bloomHaloWidth, 0, 5000, 5, "%");
     add_number(pane, "Halo Contribution", "Wide halo strength.", g_settings.bloomHaloContribution, 0, 2000, 5, "%");
+    add_dropdown(pane, "Filtering Space", "Filter in linear light or display-encoded colour.",
+        g_settings.bloomFilteringSpace, kBloomFilteringSpaces);
+    add_number(pane, "Horizontal Spread", "Scale bloom spread horizontally.",
+        g_settings.bloomHorizontalSpread, 25, 400, 5, "%");
+    add_number(pane, "Vertical Spread", "Scale bloom spread vertically.",
+        g_settings.bloomVerticalSpread, 25, 400, 5, "%");
     add_button(pane, "Restore Glow Profile Defaults", "Reset only the glow profile layers.",
         restore_bloom_profile);
     svc_ui->pane_add_section(mod_ctx, pane, "Bloom Response");
@@ -896,19 +959,19 @@ ModResult register_settings(ModError*) {
     if (result != MOD_OK) return result;
     result = register_int("bloom-size", 100, g_settings.bloomSize);
     if (result != MOD_OK) return result;
-    result = register_int("bloom-threshold", 100, g_settings.bloomThreshold);
+    result = register_int("bloom-threshold", 50, g_settings.bloomThreshold);
     if (result != MOD_OK) return result;
-    result = register_int("bloom-diffusion", 100, g_settings.bloomDiffusion);
+    result = register_int("bloom-diffusion", 0, g_settings.bloomDiffusion);
     if (result != MOD_OK) return result;
     result = register_int("bloom-saturation", 100, g_settings.bloomSaturation);
     if (result != MOD_OK) return result;
     result = register_int("bloom-blend-mode", 0, g_settings.bloomBlendMode);
     if (result != MOD_OK) return result;
-    result = register_bool("bloom-pulse-enabled", false, g_settings.bloomPulseEnabled);
+    result = register_bool("bloom-pulse-enabled", true, g_settings.bloomPulseEnabled);
     if (result != MOD_OK) return result;
-    result = register_int("bloom-pulse-period", 1500, g_settings.bloomPulsePeriod);
+    result = register_int("bloom-pulse-period", 1457, g_settings.bloomPulsePeriod);
     if (result != MOD_OK) return result;
-    result = register_int("bloom-pulse-size", 0, g_settings.bloomPulseSize);
+    result = register_int("bloom-pulse-size", 20, g_settings.bloomPulseSize);
     if (result != MOD_OK) return result;
     result = register_int("bloom-pulse-intensity", 0, g_settings.bloomPulseIntensity);
     if (result != MOD_OK) return result;
@@ -950,11 +1013,11 @@ ModResult register_settings(ModError*) {
     if (result != MOD_OK) return result;
     result = register_int("bloom-colour-layer-strength", 100, g_settings.bloomColourLayerStrength);
     if (result != MOD_OK) return result;
-    result = register_int("bloom-scene-darkening", 0, g_settings.bloomSceneDarkening);
+    result = register_int("bloom-scene-darkening", 100, g_settings.bloomSceneDarkening);
     if (result != MOD_OK) return result;
     result = register_int("bloom-pulse-activation", 0, g_settings.bloomPulseActivation);
     if (result != MOD_OK) return result;
-    result = register_bool("bloom-pulse-irregular", false, g_settings.bloomPulseIrregular);
+    result = register_bool("bloom-pulse-irregular", true, g_settings.bloomPulseIrregular);
     if (result != MOD_OK) return result;
     result = register_int("bloom-pulse-transition", 500, g_settings.bloomPulseTransition);
     if (result != MOD_OK) return result;
@@ -972,9 +1035,25 @@ ModResult register_settings(ModError*) {
     if (result != MOD_OK) return result;
     result = register_int("bloom-override-threshold", 100, g_settings.bloomOverrideThreshold);
     if (result != MOD_OK) return result;
+    result = register_int("bloom-brightness-metric", 0, g_settings.bloomBrightnessMetric);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-pre-diffusion-gain", 0, g_settings.bloomPreDiffusionGain);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-source-limit", 0, g_settings.bloomSourceLimit);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-filtering-space", 0, g_settings.bloomFilteringSpace);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-horizontal-spread", 100, g_settings.bloomHorizontalSpread);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-vertical-spread", 100, g_settings.bloomVerticalSpread);
+    if (result != MOD_OK) return result;
     result = svc_config->subscribe(mod_ctx, g_settings.bloomPreset,
         bloom_preset_changed, nullptr, nullptr);
     if (result != MOD_OK) return result;
+    // Reapply named presets at startup so fixes to preset definitions take
+    // effect for existing installations without requiring the user to select
+    // another preset first. Custom (0) remains untouched.
+    apply_bloom_preset(get_int(g_settings.bloomPreset, 0));
     result = register_int("dark-hour-fog-start", 0, g_settings.darkHourFogStart);
     if (result != MOD_OK) return result;
     result = register_bool("legacy-bloom", false, g_settings.legacyBloom);

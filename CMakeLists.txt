@@ -14,7 +14,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchDusklight.cmake")
 add_subdirectory("${DUSKLIGHT_DIR}/sdk" dusklight-sdk EXCLUDE_FROM_ALL)
 
 add_mod(twilight_visuals
-        FEATURES game
+        FEATURES game webgpu
         SOURCES
             src/mod.cpp
             src/compat.cpp
@@ -38,6 +38,8 @@ add_mod(twilight_visuals
             src/environment_skybox.cpp
             src/environment_weather.cpp
             src/postprocess.cpp
+            src/better_bloom/integration.cpp
+            src/better_bloom/renderer.cpp
             src/particles.cpp
             src/native_particles.cpp
             src/runtime.cpp

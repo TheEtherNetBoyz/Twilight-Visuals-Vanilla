@@ -40,6 +40,8 @@ struct Settings {
     ConfigVarHandle bloomThresholdSource{}, bloomThresholdNormalization{};
     ConfigVarHandle bloomActivation{}, bloomResolution{};
     ConfigVarHandle bloomEnabled{}, bloomPreset{}, bloomOverrideThreshold{};
+    ConfigVarHandle bloomBrightnessMetric{}, bloomPreDiffusionGain{}, bloomSourceLimit{};
+    ConfigVarHandle bloomFilteringSpace{}, bloomHorizontalSpread{}, bloomVerticalSpread{};
     ConfigVarHandle darkHourFogStart{};
     ConfigVarHandle legacyBloom{};
     ConfigVarHandle overrideTempleMusic{};

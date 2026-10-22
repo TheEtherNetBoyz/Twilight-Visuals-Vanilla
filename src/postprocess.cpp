@@ -1,4 +1,5 @@
 #include "postprocess.hpp"
+#include "better_bloom/integration.hpp"
 #include "runtime.hpp"
 #include "mods/service.hpp"
 #include "hook_api.hpp"
@@ -334,6 +335,9 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
     if (mode == BloomMode::Native) {
         return HOOK_CONTINUE;
     }
+    if (mode == BloomMode::Custom) {
+        return better_bloom::draw(bloom);
+    }
 
     // The override is entirely local to this hook. Dusklight's bloom object is restored before
     // returning so the setting never permanently mutates the host's bloom state.
@@ -352,8 +356,8 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
     // comes from the environment blend color, not a Palace-specific strength
     // reduction.
     const auto& settings = runtime_settings();
-    const bool custom = mode == BloomMode::Custom;
-    const f32 pulse = custom ? bloom_pulse_wave(settings) : 0.0f;
+    const bool custom = false;
+    const f32 pulse = 0.0f;
     const f32 gain = std::clamp(settings.bloomBrightness, 0.0f, 1.0f) *
                      (custom ? std::clamp(settings.betterBloomIntensity, 0.0f, 2.0f) *
                                    (1.0f + pulse * settings.bloomPulseIntensity)
@@ -380,7 +384,7 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
         return HOOK_SKIP_ORIGINAL;
     }
 
-    if (mode == BloomMode::Dusklight || mode == BloomMode::Custom) {
+    if (mode == BloomMode::Dusklight) {
         // draw2() is the vanilla Dusklight pyramid bloom implementation exposed by the
         // game-side bloom object. Calling it from the vanilla draw hook avoids changing
         // Dusklight's source while still overriding its selected mode for this preset.

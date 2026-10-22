@@ -3,6 +3,7 @@
 #include "hooks.hpp"
 #include "environment.hpp"
 #include "postprocess.hpp"
+#include "better_bloom/integration.hpp"
 #include "particles.hpp"
 #include "music.hpp"
 #include "geometry.hpp"
@@ -52,6 +53,12 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (result != MOD_OK) return result;
 
     twilight_visuals::refresh_runtime_settings();
+
+    result = twilight_visuals::better_bloom::initialize(error);
+    if (result != MOD_OK) {
+        mod_shutdown(nullptr);
+        return result;
+    }
 
     twilight_visuals::hotkeys::initialize();
 
@@ -176,10 +183,12 @@ MOD_EXPORT ModResult mod_update(ModError*) {
     twilight_visuals::music::update();
     twilight_visuals::load_acceleration::update();
     twilight_visuals::hotkeys::update();
+    twilight_visuals::better_bloom::update();
     return MOD_OK;
 }
 
 MOD_EXPORT ModResult mod_shutdown(ModError*) {
+    twilight_visuals::better_bloom::shutdown();
     twilight_visuals::hotkeys::shutdown();
     twilight_visuals::load_acceleration::uninstall_hooks();
     twilight_visuals::native_face_tuner::shutdown();
