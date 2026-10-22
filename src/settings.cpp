@@ -53,8 +53,8 @@ constexpr std::array<const char*, 2> kBloomTintSources{"Vanilla", "Neutral"};
 constexpr std::array<const char*, 2> kBloomActivations{"Vanilla", "Everywhere"};
 constexpr std::array<const char*, 3> kBloomThresholdSources{"Vanilla", "Custom", "Normalized"};
 constexpr std::array<const char*, 3> kBloomResolutions{"Full", "Half", "Quarter"};
-constexpr std::array<const char*, 6> kBloomPresets{
-    "Custom", "Faithful", "Modern Vibrant", "Modern Muted", "Hybrid", "Haze"};
+constexpr std::array<const char*, 7> kBloomPresets{
+    "Custom", "Faithful", "Faithful (Cold)", "Modern", "Modern (Cold)", "Hybrid", "Haze"};
 constexpr std::array<const char*, 4> kMenuScalingModes{
     "Native Dusklight", "GameCube (MFB)", "Wii (MFB)", "Dusklight (MFB)"};
 constexpr std::array<const char*, 2> kLoadModes{"Normal", "Fast Loads (MFB)"};
@@ -551,12 +551,91 @@ void set_bloom_profile(int64_t intensity, int64_t size, int64_t diffusion,
 void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
     const ConfigVarValue*, void*) {
     if (value == nullptr || value->type != CONFIG_VAR_INT) return;
+    if (value->int_value < 1 || value->int_value > 6) return;
+
+    // Begin from Better Bloom 2.9.1's option defaults. Presets intentionally leave
+    // activation, threshold overrides, blend mode and resolution untouched.
+    set_bloom_profile(100, 100, 0, 100, 100, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 50);
+    svc_config->set_int(mod_ctx, g_settings.bloomCoreWidth, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomCoreContribution, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomInnerWidth, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomInnerContribution, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomOuterWidth, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomOuterContribution, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomHaloWidth, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomHaloContribution, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomHighlightDesaturation, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomTintSource, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomTintRed, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomTintGreen, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomTintBlue, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 100);
+    svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, true);
     switch (value->int_value) {
-    case 1: set_bloom_profile(100, 100, 0, 100, 100, 0); break;
-    case 2: set_bloom_profile(135, 125, 115, 135, 125, 8); break;
-    case 3: set_bloom_profile(115, 120, 110, 80, 110, 5); break;
-    case 4: set_bloom_profile(125, 105, 75, 115, 120, 4); break;
-    case 5: set_bloom_profile(90, 180, 180, 75, 90, 12); break;
+    case 1: // Faithful
+    case 2: // Faithful (Cold)
+        set_bloom_profile(600, 100, 73, 100, 24, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomCoreWidth, 116);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerWidth, 451);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerContribution, 17);
+        svc_config->set_int(mod_ctx, g_settings.bloomOuterContribution, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomHaloContribution, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 176);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 95);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightDesaturation, 100);
+        if (value->int_value == 2) {
+            svc_config->set_int(mod_ctx, g_settings.bloomTintSource, 1);
+            svc_config->set_int(mod_ctx, g_settings.bloomTintRed, 52);
+            svc_config->set_int(mod_ctx, g_settings.bloomTintGreen, 47);
+            svc_config->set_int(mod_ctx, g_settings.bloomTintBlue, 44);
+        }
+        break;
+    case 3: // Modern
+        set_bloom_profile(129, 50, 29, 100, 40, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 47);
+        svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 0);
+        break;
+    case 4: // Modern (Cold)
+        set_bloom_profile(100, 50, 29, 100, 50, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 50);
+        svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomTintSource, 1);
+        svc_config->set_int(mod_ctx, g_settings.bloomTintRed, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomTintGreen, 96);
+        svc_config->set_int(mod_ctx, g_settings.bloomTintBlue, 91);
+        svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, false);
+        break;
+    case 5: // Hybrid
+        set_bloom_profile(680, 100, 73, 100, 24, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomCoreWidth, 116);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerWidth, 451);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerContribution, 17);
+        svc_config->set_int(mod_ctx, g_settings.bloomOuterWidth, 200);
+        svc_config->set_int(mod_ctx, g_settings.bloomOuterContribution, 20);
+        svc_config->set_int(mod_ctx, g_settings.bloomHaloContribution, 8);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 176);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 95);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightDesaturation, 100);
+        break;
+    case 6: // Haze
+        set_bloom_profile(135, 100, 45, 85, 40, 0);
+        svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 70);
+        svc_config->set_int(mod_ctx, g_settings.bloomCoreContribution, 15);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerWidth, 120);
+        svc_config->set_int(mod_ctx, g_settings.bloomInnerContribution, 40);
+        svc_config->set_int(mod_ctx, g_settings.bloomOuterWidth, 150);
+        svc_config->set_int(mod_ctx, g_settings.bloomHaloWidth, 220);
+        svc_config->set_int(mod_ctx, g_settings.bloomHaloContribution, 100);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightRolloff, 120);
+        svc_config->set_int(mod_ctx, g_settings.bloomHighlightLimit, 130);
+        svc_config->set_int(mod_ctx, g_settings.bloomColourLayerStrength, 0);
+        svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, false);
+        break;
     default: break;
     }
 }
