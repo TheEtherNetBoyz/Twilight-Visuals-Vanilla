@@ -76,10 +76,30 @@ void refresh_runtime_settings() {
         static_cast<float>(std::clamp<std::int64_t>(get_int(config.musicVolume, 100), 0, 100)) /
         100.0f;
     g_runtime.bloomMode = static_cast<BloomMode>(
-        std::clamp<std::int64_t>(get_int(config.bloomMode, 0), 0, 4));
+        std::clamp<std::int64_t>(get_int(config.bloomMode, 0), 0, 5));
     g_runtime.bloomBrightness =
         static_cast<float>(std::clamp<std::int64_t>(
             get_int(config.bloomBrightness, 100), 0, 100)) / 100.0f;
+    g_runtime.betterBloomIntensity =
+        static_cast<float>(std::clamp<std::int64_t>(
+            get_int(config.betterBloomIntensity, 100), 0, 200)) / 100.0f;
+    g_runtime.bloomSize = static_cast<float>(std::clamp<std::int64_t>(
+        get_int(config.bloomSize, 100), 25, 400)) / 100.0f;
+    g_runtime.bloomThreshold = static_cast<float>(std::clamp<std::int64_t>(
+        get_int(config.bloomThreshold, 100), 0, 200)) / 100.0f;
+    g_runtime.bloomDiffusion = static_cast<float>(std::clamp<std::int64_t>(
+        get_int(config.bloomDiffusion, 100), 0, 200)) / 100.0f;
+    g_runtime.bloomSaturation = static_cast<float>(std::clamp<std::int64_t>(
+        get_int(config.bloomSaturation, 100), 0, 200)) / 100.0f;
+    g_runtime.bloomBlendMode = static_cast<BloomBlendMode>(
+        std::clamp<std::int64_t>(get_int(config.bloomBlendMode, 0), 0, 2));
+    g_runtime.bloomPulseEnabled = get_bool(config.bloomPulseEnabled);
+    g_runtime.bloomPulsePeriod = static_cast<int>(std::clamp<std::int64_t>(
+        get_int(config.bloomPulsePeriod, 1500), 250, 5000));
+    g_runtime.bloomPulseSize = static_cast<float>(std::clamp<std::int64_t>(
+        get_int(config.bloomPulseSize, 0), 0, 100)) / 100.0f;
+    g_runtime.bloomPulseIntensity = static_cast<float>(std::clamp<std::int64_t>(
+        get_int(config.bloomPulseIntensity, 0), 0, 100)) / 100.0f;
     g_runtime.darkHourFogStart =
         static_cast<float>(std::clamp<std::int64_t>(
             get_int(config.darkHourFogStart, 0), 0, 400)) / 100.0f;

@@ -13,8 +13,9 @@ enum class Weather : std::int64_t {
     Current = 0, Clear, Rain, Snow, Lightning, WindStorm, SnowStorm, HeavyFog, BloodRain,
 };
 enum class BloomMode : std::int64_t {
-    Native = 0, Off, Classic, Dusklight, ClassicSmoothed,
+    Native = 0, Off, Classic, Dusklight, ClassicSmoothed, Custom,
 };
+enum class BloomBlendMode : std::int64_t { Area = 0, Additive, Screen };
 enum class MenuScaling : std::int64_t {
     Native = 0, GameCube = 1, Wii = 2, Dusklight = 3,
 };
@@ -25,6 +26,12 @@ struct RuntimeSettings {
     int chromaticAberration{80}; Skybox skybox{Skybox::TwilightDay};
     Weather weather{Weather::Current}; float musicVolume{1.0f};
     BloomMode bloomMode{BloomMode::Native}; float bloomBrightness{1.0f};
+    float betterBloomIntensity{1.0f};
+    float bloomSize{1.0f}; float bloomThreshold{1.0f};
+    float bloomDiffusion{1.0f}; float bloomSaturation{1.0f};
+    BloomBlendMode bloomBlendMode{BloomBlendMode::Area};
+    bool bloomPulseEnabled{}; int bloomPulsePeriod{1500};
+    float bloomPulseSize{}; float bloomPulseIntensity{};
     float darkHourFogStart{};
     bool legacyBloom{};
     bool overrideTempleMusic{};

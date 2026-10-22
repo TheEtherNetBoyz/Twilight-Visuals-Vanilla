@@ -25,6 +25,7 @@ namespace {
 Settings g_settings;
 UiWindowHandle g_settingsWindow{};
 UiWindowHandle g_faceWindow{};
+UiWindowHandle g_betterBloomWindow{};
 UiMenuTabHandle g_quickMenuTab{};
 UiElementHandle g_styleGroupControl{};
 UiElementHandle g_chromaticAberrationControl{};
@@ -42,8 +43,18 @@ constexpr std::array<const char*, 17> kSkyboxes{
 constexpr std::array<const char*, 9> kWeather{
     "Current", "Clear", "Rain", "Snow", "Lightning", "Wind Storm", "Snow Storm",
     "Heavy Fog", "Blood Rain"};
-constexpr std::array<const char*, 5> kBloomModes{
-    "Off (No Override)", "No Bloom", "Nvidia Shield", "Dusklight", "Classic (MFB)"};
+constexpr std::array<const char*, 6> kBloomModes{
+    "Off (No Override)", "No Bloom", "Nvidia Shield", "Dusklight", "Classic (MFB)",
+    "Better Bloom Settings"};
+constexpr std::array<const char*, 3> kBloomBlendModes{
+    "Area Controlled", "Additive", "Screen"};
+constexpr std::array<const char*, 2> kBloomGainSources{"Vanilla", "Fixed"};
+constexpr std::array<const char*, 2> kBloomTintSources{"Vanilla", "Neutral"};
+constexpr std::array<const char*, 2> kBloomActivations{"Vanilla", "Everywhere"};
+constexpr std::array<const char*, 3> kBloomThresholdSources{"Vanilla", "Custom", "Normalized"};
+constexpr std::array<const char*, 3> kBloomResolutions{"Full", "Half", "Quarter"};
+constexpr std::array<const char*, 6> kBloomPresets{
+    "Custom", "Faithful", "Modern Vibrant", "Modern Muted", "Hybrid", "Haze"};
 constexpr std::array<const char*, 4> kMenuScalingModes{
     "Native Dusklight", "GameCube (MFB)", "Wii (MFB)", "Dusklight (MFB)"};
 constexpr std::array<const char*, 2> kLoadModes{"Normal", "Fast Loads (MFB)"};
@@ -109,6 +120,7 @@ void add_control(UiElementHandle pane, UiControlDesc& control) {
 }
 
 void open_face_tuner(ModContext*, void*);
+void open_better_bloom_settings(ModContext*, void*);
 void get_dark_hour_fog_value(ModContext*, void*, UiControlValue* outValue);
 void adjust_dark_hour_fog_value(ModContext*, void*, const UiControlValue* value);
 ModResult build_visual_style_group(
@@ -116,6 +128,8 @@ ModResult build_visual_style_group(
 ModResult build_brightness_group(
     ModContext*, UiElementHandle, void*, ModError*);
 ModResult build_skybox_weather_group(
+    ModContext*, UiElementHandle, void*, ModError*);
+ModResult build_better_bloom_group(
     ModContext*, UiElementHandle, void*, ModError*);
 
 struct StyleButtonContext {
@@ -150,6 +164,17 @@ void select_visual_style(ModContext*, void* userData) {
         svc_ui->elem_set_visible(mod_ctx, g_chromaticAberrationControl,
                                  context->value == 2);
     }
+}
+
+void get_bloom_mode(ModContext*, void*, UiControlValue* outValue) {
+    if (outValue != nullptr) outValue->int_value = get_int(g_settings.bloomMode, 0);
+}
+
+void set_bloom_mode(ModContext*, void*, const UiControlValue* value) {
+    if (value == nullptr) return;
+    const int64_t mode = std::clamp<int64_t>(value->int_value, 0, 5);
+    svc_config->set_int(mod_ctx, g_settings.bloomMode, mode);
+    if (mode == 5) open_better_bloom_settings(mod_ctx, nullptr);
 }
 
 void add_button(UiElementHandle pane, const char* label, const char* help,
@@ -405,11 +430,19 @@ ModResult build_settings_tab(ModContext*, UiWindowHandle, UiElementHandle left,
     g_settings.humanWolfSenses);
 
     svc_ui->pane_add_section(mod_ctx, left, "MFB Settings");
-    add_select(left, "Bloom Override Mode",
+    UiControlDesc bloomMode = UI_CONTROL_DESC_INIT;
+    bloomMode.kind = UI_CONTROL_SELECT;
+    bloomMode.label = "Bloom Override Mode";
+    bloomMode.help_rml =
         "Choose the bloom implementation used by Twilight Visuals. Native Dusklight leaves "
         "Dusklight's own bloom setting in control. Classic (MFB) renders Classic bloom at "
-        "high resolution with its original sample spacing and filters each bloom copy.",
-        g_settings.bloomMode, kBloomModes);
+        "high resolution. Selecting Better Bloom Settings opens its dedicated controls.";
+    bloomMode.binding = UI_BINDING_CALLBACKS;
+    bloomMode.get = get_bloom_mode;
+    bloomMode.set = set_bloom_mode;
+    bloomMode.options = kBloomModes.data();
+    bloomMode.option_count = kBloomModes.size();
+    add_control(left, bloomMode);
     add_number(left, "Bloom Brightness",
         "Adjust the MFB bloom brightness multiplier independently from scene brightness.",
         g_settings.bloomBrightness, 0, 100, 10, "%");
@@ -503,6 +536,154 @@ ModResult build_skybox_weather_group(
         "Override weather independently from the visual toggle.",
         g_settings.weather, kWeather);
     return MOD_OK;
+}
+
+void set_bloom_profile(int64_t intensity, int64_t size, int64_t diffusion,
+    int64_t saturation, int64_t response, int64_t darkening) {
+    svc_config->set_int(mod_ctx, g_settings.betterBloomIntensity, intensity);
+    svc_config->set_int(mod_ctx, g_settings.bloomSize, size);
+    svc_config->set_int(mod_ctx, g_settings.bloomDiffusion, diffusion);
+    svc_config->set_int(mod_ctx, g_settings.bloomSaturation, saturation);
+    svc_config->set_int(mod_ctx, g_settings.bloomResponseGain, response);
+    svc_config->set_int(mod_ctx, g_settings.bloomSceneDarkening, darkening);
+}
+
+void bloom_preset_changed(ModContext*, ConfigVarHandle, const ConfigVarValue* value,
+    const ConfigVarValue*, void*) {
+    if (value == nullptr || value->type != CONFIG_VAR_INT) return;
+    switch (value->int_value) {
+    case 1: set_bloom_profile(100, 100, 0, 100, 100, 0); break;
+    case 2: set_bloom_profile(135, 125, 115, 135, 125, 8); break;
+    case 3: set_bloom_profile(115, 120, 110, 80, 110, 5); break;
+    case 4: set_bloom_profile(125, 105, 75, 115, 120, 4); break;
+    case 5: set_bloom_profile(90, 180, 180, 75, 90, 12); break;
+    default: break;
+    }
+}
+
+void restore_bloom_profile(ModContext*, void*) {
+    for (ConfigVarHandle handle : {g_settings.bloomCoreWidth, g_settings.bloomCoreContribution,
+             g_settings.bloomInnerWidth, g_settings.bloomInnerContribution,
+             g_settings.bloomOuterWidth, g_settings.bloomOuterContribution,
+             g_settings.bloomHaloWidth, g_settings.bloomHaloContribution})
+        svc_config->set_int(mod_ctx, handle, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomDiffusion, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomPreset, 0);
+}
+
+void restore_better_bloom_defaults(ModContext*, void*) {
+    svc_config->set_bool(mod_ctx, g_settings.bloomEnabled, true);
+    set_bloom_profile(100, 100, 0, 100, 100, 0);
+    restore_bloom_profile(mod_ctx, nullptr);
+    svc_config->set_int(mod_ctx, g_settings.bloomThreshold, 50);
+    svc_config->set_int(mod_ctx, g_settings.bloomThresholdSource, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomOverrideThreshold, 100);
+    svc_config->set_int(mod_ctx, g_settings.bloomThresholdNormalization, 50);
+    svc_config->set_bool(mod_ctx, g_settings.bloomPulseEnabled, false);
+    svc_config->set_int(mod_ctx, g_settings.bloomPulsePeriod, 4000);
+    svc_config->set_int(mod_ctx, g_settings.bloomBlendMode, 0);
+    svc_config->set_int(mod_ctx, g_settings.bloomResolution, 1);
+}
+
+ModResult build_better_bloom_group(
+    ModContext*, UiElementHandle pane, void*, ModError*) {
+    svc_ui->pane_add_section(mod_ctx, pane, "Presets");
+    add_dropdown(pane, "Preset", "Apply a complete Better Bloom profile.",
+        g_settings.bloomPreset, kBloomPresets);
+    svc_ui->pane_add_section(mod_ctx, pane, "Bloom Options");
+    add_toggle(pane, "Enable Better Bloom", "Enable the Better Bloom renderer for this mode.",
+        g_settings.bloomEnabled);
+    add_number(pane, "Intensity",
+        "Scale the Better Bloom response after the original Bloom Brightness setting.",
+        g_settings.betterBloomIntensity, 0, 20000, 5, "%");
+    add_number(pane, "Size",
+        "Scale the bloom radius. 100% preserves the area's authored value.",
+        g_settings.bloomSize, 0, 4000, 5, "%");
+    add_number(pane, "Soft Threshold", "Soften the bloom cutoff around bright pixels.",
+        g_settings.bloomThreshold, 0, 667, 1, "%");
+    svc_ui->pane_add_section(mod_ctx, pane, "Glow Profile");
+    add_number(pane, "Diffusion",
+        "Adjust how strongly the filtered glow spreads into the final bloom image.",
+        g_settings.bloomDiffusion, 0, 4000, 5, "%");
+    add_number(pane, "Core Width", "Tight central glow width.", g_settings.bloomCoreWidth, 0, 5000, 5, "%");
+    add_number(pane, "Core Contribution", "Tight central glow strength.", g_settings.bloomCoreContribution, 0, 2000, 5, "%");
+    add_number(pane, "Inner Glow Width", "Inner glow width.", g_settings.bloomInnerWidth, 0, 5000, 5, "%");
+    add_number(pane, "Inner Glow Contribution", "Inner glow strength.", g_settings.bloomInnerContribution, 0, 2000, 5, "%");
+    add_number(pane, "Outer Glow Width", "Outer glow width.", g_settings.bloomOuterWidth, 0, 5000, 5, "%");
+    add_number(pane, "Outer Glow Contribution", "Outer glow strength.", g_settings.bloomOuterContribution, 0, 2000, 5, "%");
+    add_number(pane, "Halo Width", "Wide halo width.", g_settings.bloomHaloWidth, 0, 5000, 5, "%");
+    add_number(pane, "Halo Contribution", "Wide halo strength.", g_settings.bloomHaloContribution, 0, 2000, 5, "%");
+    add_button(pane, "Restore Glow Profile Defaults", "Reset only the glow profile layers.",
+        restore_bloom_profile);
+    svc_ui->pane_add_section(mod_ctx, pane, "Bloom Response");
+    add_dropdown(pane, "Gain Source", "Authored or fixed response gain.", g_settings.bloomGainSource, kBloomGainSources);
+    add_number(pane, "Response Gain", "Bloom response gain.", g_settings.bloomResponseGain, 0, 4000, 5, "%");
+    add_number(pane, "Highlight Rolloff", "Soften extreme highlights.", g_settings.bloomHighlightRolloff, 0, 400, 5, "%");
+    add_toggle(pane, "Auto Compensation", "Compensate intensity when response changes.", g_settings.bloomAutoCompensation);
+    add_number(pane, "Highlight Limit", "Limit highlight contribution; 0% disables it.", g_settings.bloomHighlightLimit, 0, 4000, 5, "%");
+    add_number(pane, "Highlight Desaturation", "Desaturate the brightest bloom.", g_settings.bloomHighlightDesaturation, 0, 100, 1, "%");
+    svc_ui->pane_add_section(mod_ctx, pane, "Colour");
+    add_dropdown(pane, "Tint Source", "Authored or neutral tint source.", g_settings.bloomTintSource, kBloomTintSources);
+    add_number(pane, "Saturation",
+        "Adjust bloom colour saturation. 0% is monochrome and 100% preserves the authored colour.",
+        g_settings.bloomSaturation, 0, 300, 5, "%");
+    add_number(pane, "Tint Red", "Red tint multiplier.", g_settings.bloomTintRed, 0, 200, 1, "%");
+    add_number(pane, "Tint Green", "Green tint multiplier.", g_settings.bloomTintGreen, 0, 200, 1, "%");
+    add_number(pane, "Tint Blue", "Blue tint multiplier.", g_settings.bloomTintBlue, 0, 200, 1, "%");
+    add_number(pane, "Colour Layer Strength", "Coloured bloom layer strength.", g_settings.bloomColourLayerStrength, 0, 1000, 5, "%");
+    add_number(pane, "Scene Darkening", "Darken the scene beneath bloom.", g_settings.bloomSceneDarkening, 0, 100, 1, "%");
+    svc_ui->pane_add_section(mod_ctx, pane, "Pulse Options");
+    add_toggle(pane, "Enable Pulsing", "Enable frame-rate-independent pulsing.", g_settings.bloomPulseEnabled);
+    add_dropdown(pane, "Pulse Activation", "Vanilla areas or everywhere.", g_settings.bloomPulseActivation, kBloomActivations);
+    add_dropdown(pane, "Blend Mode",
+        "Use the area's authored blend mode, or force Better Bloom's Additive or Screen blend.",
+        g_settings.bloomBlendMode, kBloomBlendModes);
+    add_number(pane, "Pulse Cycle",
+        "Set the duration of one complete bloom pulse.",
+        g_settings.bloomPulsePeriod, 100, 60000, 100, " ms");
+    add_toggle(pane, "Irregular Timing", "Vary pulse timing.", g_settings.bloomPulseIrregular);
+    add_number(pane, "Pulse Size Variation",
+        "Adjust how much bloom size changes during the custom pulse.",
+        g_settings.bloomPulseSize, 0, 100, 5, "%");
+    add_number(pane, "Pulse Intensity Variation",
+        "Adjust how much bloom intensity changes during the custom pulse.",
+        g_settings.bloomPulseIntensity, 0, 100, 5, "%");
+    add_number(pane, "Area Transition", "Pulse transition time between areas.", g_settings.bloomPulseTransition, 0, 10000, 100, " ms");
+    svc_ui->pane_add_section(mod_ctx, pane, "Overrides");
+    add_dropdown(pane, "Threshold Source", "Authored, custom, or normalized threshold.", g_settings.bloomThresholdSource, kBloomThresholdSources);
+    add_number(pane, "Threshold Value", "Custom bloom threshold value.",
+        g_settings.bloomOverrideThreshold, 0, 400, 1, "%");
+    add_number(pane, "Threshold Normalization", "Threshold normalization amount.", g_settings.bloomThresholdNormalization, 0, 100, 1, "%");
+    add_dropdown(pane, "Bloom Activation", "Vanilla areas or everywhere.", g_settings.bloomActivation, kBloomActivations);
+    svc_ui->pane_add_section(mod_ctx, pane, "Performance");
+    add_dropdown(pane, "Processing Resolution", "Full, half, or quarter resolution.", g_settings.bloomResolution, kBloomResolutions);
+    add_button(pane, "Restore All Defaults", "Reset every Better Bloom setting.",
+        restore_better_bloom_defaults);
+    svc_ui->pane_add_text(mod_ctx, pane,
+        "Defaults preserve the original area settings.",
+        nullptr);
+    return MOD_OK;
+}
+
+void better_bloom_window_closed(ModContext*, UiWindowHandle, void*) {
+    g_betterBloomWindow = 0;
+}
+
+ModResult build_better_bloom_tab(ModContext*, UiWindowHandle, UiElementHandle left,
+    UiElementHandle, void*, ModError* error) {
+    return build_better_bloom_group(mod_ctx, left, nullptr, error);
+}
+
+void open_better_bloom_settings(ModContext*, void*) {
+    if (g_betterBloomWindow != 0) return;
+    UiTabDesc tabs[1] = {UI_TAB_DESC_INIT};
+    tabs[0].title = "Better Bloom Settings";
+    tabs[0].build = build_better_bloom_tab;
+    UiWindowDesc window = UI_WINDOW_DESC_INIT;
+    window.tabs = tabs;
+    window.tab_count = 1;
+    window.on_closed = better_bloom_window_closed;
+    svc_ui->window_push(mod_ctx, &window, &g_betterBloomWindow);
 }
 
 void settings_window_closed(ModContext*, UiWindowHandle, void*) {
@@ -632,6 +813,89 @@ ModResult register_settings(ModError*) {
     if (result != MOD_OK) return result;
     result = register_int("bloom-brightness", 100, g_settings.bloomBrightness);
     if (result != MOD_OK) return result;
+    result = register_int("better-bloom-intensity", 100, g_settings.betterBloomIntensity);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-size", 100, g_settings.bloomSize);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-threshold", 100, g_settings.bloomThreshold);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-diffusion", 100, g_settings.bloomDiffusion);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-saturation", 100, g_settings.bloomSaturation);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-blend-mode", 0, g_settings.bloomBlendMode);
+    if (result != MOD_OK) return result;
+    result = register_bool("bloom-pulse-enabled", false, g_settings.bloomPulseEnabled);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-pulse-period", 1500, g_settings.bloomPulsePeriod);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-pulse-size", 0, g_settings.bloomPulseSize);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-pulse-intensity", 0, g_settings.bloomPulseIntensity);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-core-width", 100, g_settings.bloomCoreWidth);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-core-contribution", 100, g_settings.bloomCoreContribution);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-inner-width", 100, g_settings.bloomInnerWidth);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-inner-contribution", 100, g_settings.bloomInnerContribution);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-outer-width", 100, g_settings.bloomOuterWidth);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-outer-contribution", 100, g_settings.bloomOuterContribution);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-halo-width", 100, g_settings.bloomHaloWidth);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-halo-contribution", 100, g_settings.bloomHaloContribution);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-gain-source", 0, g_settings.bloomGainSource);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-response-gain", 100, g_settings.bloomResponseGain);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-highlight-rolloff", 100, g_settings.bloomHighlightRolloff);
+    if (result != MOD_OK) return result;
+    result = register_bool("bloom-auto-compensation", true, g_settings.bloomAutoCompensation);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-highlight-limit", 0, g_settings.bloomHighlightLimit);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-highlight-desaturation", 0, g_settings.bloomHighlightDesaturation);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-tint-source", 0, g_settings.bloomTintSource);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-tint-red", 100, g_settings.bloomTintRed);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-tint-green", 100, g_settings.bloomTintGreen);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-tint-blue", 100, g_settings.bloomTintBlue);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-colour-layer-strength", 100, g_settings.bloomColourLayerStrength);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-scene-darkening", 0, g_settings.bloomSceneDarkening);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-pulse-activation", 0, g_settings.bloomPulseActivation);
+    if (result != MOD_OK) return result;
+    result = register_bool("bloom-pulse-irregular", false, g_settings.bloomPulseIrregular);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-pulse-transition", 500, g_settings.bloomPulseTransition);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-threshold-source", 0, g_settings.bloomThresholdSource);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-threshold-normalization", 50, g_settings.bloomThresholdNormalization);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-activation", 0, g_settings.bloomActivation);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-resolution", 1, g_settings.bloomResolution);
+    if (result != MOD_OK) return result;
+    result = register_bool("better-bloom-enabled", true, g_settings.bloomEnabled);
+    if (result != MOD_OK) return result;
+    result = register_int("better-bloom-preset", 0, g_settings.bloomPreset);
+    if (result != MOD_OK) return result;
+    result = register_int("bloom-override-threshold", 100, g_settings.bloomOverrideThreshold);
+    if (result != MOD_OK) return result;
+    result = svc_config->subscribe(mod_ctx, g_settings.bloomPreset,
+        bloom_preset_changed, nullptr, nullptr);
+    if (result != MOD_OK) return result;
     result = register_int("dark-hour-fog-start", 0, g_settings.darkHourFogStart);
     if (result != MOD_OK) return result;
     result = register_bool("legacy-bloom", false, g_settings.legacyBloom);
@@ -687,6 +951,10 @@ void unregister_quick_menu_tab() {
 }
 
 void close_settings_window() {
+    if (g_betterBloomWindow != 0) {
+        svc_ui->window_close(mod_ctx, g_betterBloomWindow);
+        g_betterBloomWindow = 0;
+    }
     if (g_faceWindow != 0) {
         svc_ui->window_close(mod_ctx, g_faceWindow);
         g_faceWindow = 0;

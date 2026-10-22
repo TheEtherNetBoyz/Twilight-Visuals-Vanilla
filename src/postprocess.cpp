@@ -8,6 +8,8 @@
 #include "JSystem/J3DGraphBase/J3DShape.h"
 #include "SSystem/SComponent/c_m3d.h"
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -291,6 +293,27 @@ u8 scaled_u8(u8 value, f32 scale) {
     return static_cast<u8>(std::clamp(static_cast<int>(value * scale + 0.5f), 0, 255));
 }
 
+GXColor saturated_bloom_color(GXColor colour, f32 saturation) {
+    const f32 luminance = colour.r * 0.2126f + colour.g * 0.7152f + colour.b * 0.0722f;
+    const auto channel = [luminance, saturation](u8 value) {
+        return static_cast<u8>(std::clamp(
+            static_cast<int>(luminance + (value - luminance) * saturation + 0.5f), 0, 255));
+    };
+    colour.r = channel(colour.r);
+    colour.g = channel(colour.g);
+    colour.b = channel(colour.b);
+    return colour;
+}
+
+f32 bloom_pulse_wave(const RuntimeSettings& settings) {
+    if (!settings.bloomPulseEnabled) return 0.0f;
+    using Clock = std::chrono::steady_clock;
+    const f64 elapsed = std::chrono::duration<f64>(Clock::now().time_since_epoch()).count();
+    const f64 period = std::max(settings.bloomPulsePeriod, 250) / 1000.0;
+    constexpr f64 tau = 6.28318530717958647692;
+    return static_cast<f32>((std::sin(elapsed * (tau / period)) + 1.0) * 0.5);
+}
+
 HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
     auto* bloom = mods::arg<mDoGph_gInf_c::bloom_c*>(args, 0);
     // Bloom Override is an independent MFB setting. Keep it available when
@@ -328,9 +351,28 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
     // Dark Hour shares the regular Twilight bloom preset. Its green identity
     // comes from the environment blend color, not a Palace-specific strength
     // reduction.
-    const f32 gain = std::clamp(runtime_settings().bloomBrightness, 0.0f, 1.0f);
+    const auto& settings = runtime_settings();
+    const bool custom = mode == BloomMode::Custom;
+    const f32 pulse = custom ? bloom_pulse_wave(settings) : 0.0f;
+    const f32 gain = std::clamp(settings.bloomBrightness, 0.0f, 1.0f) *
+                     (custom ? std::clamp(settings.betterBloomIntensity, 0.0f, 2.0f) *
+                                   (1.0f + pulse * settings.bloomPulseIntensity)
+                             : 1.0f);
     bloom->mEnable = 1;
     bloom->mBlendColor.a = scaled_u8(bloom->mBlendColor.a, gain);
+    if (custom) {
+        bloom->mBlendColor = saturated_bloom_color(
+            bloom->mBlendColor, std::clamp(settings.bloomSaturation, 0.0f, 2.0f));
+        bloom->mPoint = scaled_u8(
+            bloom->mPoint, std::clamp(settings.bloomThreshold, 0.0f, 2.0f));
+        bloom->mBlureSize = std::max<u8>(1, scaled_u8(bloom->mBlureSize,
+            std::clamp(settings.bloomSize, 0.25f, 4.0f) *
+            (1.0f + pulse * settings.bloomPulseSize)));
+        bloom->mBlureRatio = scaled_u8(
+            bloom->mBlureRatio, std::clamp(settings.bloomDiffusion, 0.0f, 2.0f));
+        if (settings.bloomBlendMode == BloomBlendMode::Additive) bloom->mMode = 0;
+        if (settings.bloomBlendMode == BloomBlendMode::Screen) bloom->mMode = 1;
+    }
 
     if (mode == BloomMode::Classic || mode == BloomMode::ClassicSmoothed) {
         draw_legacy_bloom(bloom, mode == BloomMode::ClassicSmoothed);
@@ -338,7 +380,7 @@ HookAction bloom_draw_pre(ModContext*, void* args, void*, void*) {
         return HOOK_SKIP_ORIGINAL;
     }
 
-    if (mode == BloomMode::Dusklight) {
+    if (mode == BloomMode::Dusklight || mode == BloomMode::Custom) {
         // draw2() is the vanilla Dusklight pyramid bloom implementation exposed by the
         // game-side bloom object. Calling it from the vanilla draw hook avoids changing
         // Dusklight's source while still overriding its selected mode for this preset.
