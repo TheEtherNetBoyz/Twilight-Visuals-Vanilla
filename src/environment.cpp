@@ -13,6 +13,8 @@
 
 #include "d/d_kankyo.h"
 
+#include <chrono>
+
 namespace twilight_visuals::environment {
 
 namespace {
@@ -25,6 +27,32 @@ bool (*s_isSimFrame)();
 bool s_bloomPulseGuardAvailable;
 thread_local bool s_restoreBloomPulse;
 thread_local s16 s_savedBloomPulse;
+thread_local bool s_bloomSimulationFrame = true;
+std::chrono::steady_clock::time_point s_lastBloomFrameSample{};
+std::chrono::duration<double> s_bloomFrameAccumulator{};
+
+bool fallback_bloom_simulation_frame() {
+    constexpr std::chrono::duration<double> simulationPeriod{1.0 / 30.0};
+    const auto now = std::chrono::steady_clock::now();
+    if (s_lastBloomFrameSample.time_since_epoch().count() == 0) {
+        s_lastBloomFrameSample = now;
+        return true;
+    }
+    auto elapsed = now - s_lastBloomFrameSample;
+    s_lastBloomFrameSample = now;
+    // Treat a pause or loading stall as one simulation step instead of trying
+    // to replay a backlog of bloom pulses on the next rendered frame.
+    if (elapsed > std::chrono::milliseconds(250)) {
+        s_bloomFrameAccumulator = {};
+        return true;
+    }
+    s_bloomFrameAccumulator += elapsed;
+    if (s_bloomFrameAccumulator < simulationPeriod) return false;
+    do {
+        s_bloomFrameAccumulator -= simulationPeriod;
+    } while (s_bloomFrameAccumulator >= simulationPeriod);
+    return true;
+}
 
 void set_light_post(ModContext*, void* args, void*, void*) {
     if (s_restoreBloomPulse) {
@@ -43,10 +71,13 @@ void set_light_post(ModContext*, void* args, void*, void*) {
 HookAction set_light_pre(ModContext*, void*, void*, void*) {
     if (palette::active()) boundary::begin_visual_environment();
     weather::apply();
+    s_bloomSimulationFrame = s_isSimFrame != nullptr
+        ? s_isSimFrame()
+        : fallback_bloom_simulation_frame();
     s_restoreBloomPulse = s_bloomPulseGuardAvailable && active() &&
-        runtime_settings().bloomMode == BloomMode::ClassicSmoothed &&
-        !s_isSimFrame();
-    // Presentation redraws must not advance Classic's simulation-owned pulse.
+                          !s_bloomSimulationFrame;
+    // Presentation redraws must not advance the shared simulation-owned pulse,
+    // regardless of the selected bloom renderer or visual style.
     if (s_restoreBloomPulse) s_savedBloomPulse = *s_bloomPulse;
     return HOOK_CONTINUE;
 }
@@ -96,10 +127,9 @@ ModResult install_hooks() {
         (flags & HOOK_SYMBOL_CODE)) {
         s_isSimFrame = reinterpret_cast<bool (*)()>(address);
     }
-    // Older vanilla hosts do not export the presentation-frame query. The
-    // smoothed bloom renderer remains usable there; only its optional pulse
-    // rewind is disabled.
-    s_bloomPulseGuardAvailable = s_bloomPulse != nullptr && s_isSimFrame != nullptr;
+    // The shared pulse can still be protected on older hosts by using the
+    // 30 Hz fallback when the private simulation-frame query is unavailable.
+    s_bloomPulseGuardAvailable = s_bloomPulse != nullptr;
 
     ModResult result = mods::hook::add_pre<EnvironmentSetLight>(set_light_pre);
     if (result != MOD_OK) return result;
@@ -118,6 +148,10 @@ void area_reloaded() {
     weather::area_reloaded();
 }
 
+bool bloom_simulation_frame() {
+    return s_bloomSimulationFrame;
+}
+
 void uninstall_hooks() {
     if (s_restoreBloomPulse) {
         *s_bloomPulse = s_savedBloomPulse;
@@ -127,6 +161,9 @@ void uninstall_hooks() {
     s_bloomPulseGuardAvailable = false;
     s_bloomPulse = nullptr;
     s_isSimFrame = nullptr;
+    s_bloomSimulationFrame = true;
+    s_lastBloomFrameSample = {};
+    s_bloomFrameAccumulator = {};
     mods::hook::uninstall<EnvironmentSetLightActor>();
     mods::hook::uninstall<EnvironmentSetLightBg>();
     mods::hook::uninstall<EnvironmentSetLight>();

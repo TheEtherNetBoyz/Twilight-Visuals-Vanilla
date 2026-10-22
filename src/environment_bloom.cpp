@@ -83,7 +83,8 @@ void apply_profile() {
     bloom->setPoint(static_cast<u8>(threshold));
     static s16 pulsePhase{};
     const f32 pulse = cM_ssin(pulsePhase);
-    pulsePhase += static_cast<s16>(cM_rndF(2000.0f) + 500.0f);
+    if (bloom_simulation_frame())
+        pulsePhase += static_cast<s16>(cM_rndF(2000.0f) + 500.0f);
     const f32 blur = profile->info.mBlurAmount * darkHourScale * (1.0f + pulse * 0.2f);
     bloom->setBlureSize(static_cast<u8>(std::clamp(blur, 0.0f, 255.0f)));
     bloom->setBlureRatio(profile->info.mDensity * darkHourScale);

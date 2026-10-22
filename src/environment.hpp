@@ -11,6 +11,7 @@ bool kakariko_village();
 bool gerudo_desert();
 bool reduced_dark_hour_outdoor();
 float reduced_dark_hour_outdoor_scale();
+bool bloom_simulation_frame();
 ModResult install_hooks();
 void uninstall_hooks();
 void area_reloaded();
